@@ -1,0 +1,159 @@
+{
+  "metadata": {
+    "dataset_name": "FastAPI QA Paraphrase Cases — v1",
+    "source": "https://fastapi.tiangolo.com/tutorial/",
+    "language": "bilingual — context: English (source), annotation: Indonesian",
+    "case_type": "paraphrase",
+    "description_id": "Setiap case berisi satu konteks dengan satu pertanyaan yang diformulasikan dalam tiga cara berbeda (original + 2 paraphrase). Model menerima konteks yang sama tapi pertanyaan yang berbeda. Tujuan: mengukur apakah jawaban model stabil atau berubah hanya karena wording pertanyaan berubah.",
+    "total_cases": 6,
+    "variants_per_case": 3,
+    "schema_version": "1.0",
+    "eval_dimensions": ["consistency"]
+  },
+  "cases": [
+    {
+      "id": "paraphrase_001",
+      "topic": "Query Parameters — Making Required",
+      "context": "As query parameters are not a fixed part of a path, they can be optional and can have default values. But when you want to make a query parameter required, you can just not declare any default value.",
+      "ground_truth": "By not declaring any default value for the parameter.",
+      "variants": [
+        {
+          "label": "original",
+          "question": "How do you make a query parameter required in FastAPI?"
+        },
+        {
+          "label": "paraphrase_1",
+          "question": "What is the way to force a query parameter to be mandatory in FastAPI?"
+        },
+        {
+          "label": "paraphrase_2",
+          "question": "In FastAPI, how can a query parameter be made non-optional?"
+        }
+      ],
+      "annotation": {
+        "catatan": "Ketiga formulasi menanyakan hal yang sama dengan kata kunci berbeda: required/mandatory/non-optional. Model yang konsisten harus menjawab 'tidak mendeklarasikan default value' untuk ketiganya.",
+        "red_flag_jika": "Salah satu paraphrase memicu jawaban yang menyebut cara lain seperti menggunakan Required dari Pydantic atau menggunakan Path()."
+      }
+    },
+    {
+      "id": "paraphrase_002",
+      "topic": "Path Parameters — Type Declaration",
+      "context": "You can declare the type of a path parameter in the function, using standard Python type annotations. In this case, item_id is declared to be an int. This will give you editor support inside of your function, with error checks, completion, etc. Notice that the value your function received (and returned) is 3, as a Python int, not a string '3'.",
+      "ground_truth": "The function will receive the value as a Python int, not as a string.",
+      "variants": [
+        {
+          "label": "original",
+          "question": "What type does FastAPI pass to the function when a path parameter is declared as int?"
+        },
+        {
+          "label": "paraphrase_1",
+          "question": "If a path parameter is typed as int, what Python type will the function receive?"
+        },
+        {
+          "label": "paraphrase_2",
+          "question": "When you annotate a path parameter with int, what is the type of the value inside the function?"
+        }
+      ],
+      "annotation": {
+        "catatan": "Pertanyaan menguji apakah model memahami type conversion FastAPI. Semua variant harus menghasilkan jawaban yang menyebut Python int, bukan string.",
+        "red_flag_jika": "Salah satu variant memicu jawaban yang menyebut tipe lain atau tidak menyebut perbedaan int vs string sama sekali."
+      }
+    },
+    {
+      "id": "paraphrase_003",
+      "topic": "HTTP Methods — Operations",
+      "context": "In the HTTP protocol, you can communicate to each path using one or more of these methods. When building APIs, you normally use these specific HTTP methods to perform a specific action: POST to create data, GET to read data, PUT to update data, DELETE to delete data. So, in OpenAPI, each of the HTTP methods is called an operation.",
+      "ground_truth": "PUT is used to update data.",
+      "variants": [
+        {
+          "label": "original",
+          "question": "According to the documentation, what HTTP method is used to update data?"
+        },
+        {
+          "label": "paraphrase_1",
+          "question": "Which HTTP method should be used when you want to update existing data?"
+        },
+        {
+          "label": "paraphrase_2",
+          "question": "What is the correct HTTP method for data modification according to the provided context?"
+        }
+      ],
+      "annotation": {
+        "catatan": "Jawaban yang benar adalah PUT. Paraphrase_2 menggunakan kata 'modification' yang bisa memicu PATCH dari training knowledge model.",
+        "red_flag_jika": "Paraphrase_2 memicu jawaban PATCH atau 'PUT or PATCH' — model menggunakan prior knowledge untuk melengkapi jawaban."
+      }
+    },
+    {
+      "id": "paraphrase_004",
+      "topic": "Query Parameters — Type Conversion",
+      "context": "When you declare other function parameters that are not part of the path parameters, they are automatically interpreted as query parameters. As they are part of the URL, they are naturally strings. But when you declare them with Python types (in the example above, as int), they are converted to that type and validated against it.",
+      "ground_truth": "They are converted to that type and validated against it.",
+      "variants": [
+        {
+          "label": "original",
+          "question": "What happens to query parameters declared with Python types in FastAPI?"
+        },
+        {
+          "label": "paraphrase_1",
+          "question": "How does FastAPI process query parameters that have type annotations?"
+        },
+        {
+          "label": "paraphrase_2",
+          "question": "What does FastAPI do when a query parameter is given a Python type hint?"
+        }
+      ],
+      "annotation": {
+        "catatan": "Model harus menyebut konversi tipe DAN validasi untuk semua variant. Hanya menyebut salah satu berarti inkonsistensi parsial.",
+        "red_flag_jika": "Satu variant menyebut konversi saja, variant lain menyebut validasi saja — jawaban parsial yang tidak konsisten."
+      }
+    },
+    {
+      "id": "paraphrase_005",
+      "topic": "OpenAPI Schema — Content",
+      "context": "FastAPI generates a schema with all your API using the OpenAPI standard for defining APIs. A schema is a definition or description of something. Not the code that implements it, but just an abstract description. This schema definition includes your API paths, the possible parameters they take.",
+      "ground_truth": "The schema definition includes your API paths and the possible parameters they take.",
+      "variants": [
+        {
+          "label": "original",
+          "question": "What does the OpenAPI schema generated by FastAPI include?"
+        },
+        {
+          "label": "paraphrase_1",
+          "question": "What information is contained in the FastAPI-generated OpenAPI schema?"
+        },
+        {
+          "label": "paraphrase_2",
+          "question": "What are the contents of the schema that FastAPI creates using the OpenAPI standard?"
+        }
+      ],
+      "annotation": {
+        "catatan": "Ini adalah case yang sama dengan clean_007. Dipakai kembali untuk consistency eval karena jawabannya sudah diketahui dari clean case.",
+        "red_flag_jika": "Model menambahkan response bodies, authentication, atau detail lain yang tidak ada di konteks untuk salah satu variant."
+      }
+    },
+    {
+      "id": "paraphrase_006",
+      "topic": "Body Parameters — embed",
+      "context": "Let's say you only have a single item body parameter from a Pydantic model Item. By default, FastAPI will then expect its body directly. But if you want it to expect a JSON with a key item and inside of it the model contents, as it does when you declare extra body parameters, you can use the special Body parameter embed.",
+      "ground_truth": "By default, FastAPI expects the body directly, without wrapping it in a key.",
+      "variants": [
+        {
+          "label": "original",
+          "question": "What is the default behavior of FastAPI when receiving a single Pydantic model as a body parameter?"
+        },
+        {
+          "label": "paraphrase_1",
+          "question": "How does FastAPI handle the request body when there is only one Pydantic model parameter?"
+        },
+        {
+          "label": "paraphrase_2",
+          "question": "When a single body parameter is declared in FastAPI, what does it expect from the incoming request by default?"
+        }
+      ],
+      "annotation": {
+        "catatan": "Kunci jawaban adalah kata 'directly' — FastAPI expects body directly tanpa wrapping. Model yang tidak menyebut ini berarti jawabannya tidak presisi.",
+        "red_flag_jika": "Salah satu variant memicu penjelasan tentang embed tanpa ditanya, atau menyebut bahwa FastAPI selalu membungkus body dalam sebuah key."
+      }
+    }
+  ]
+}

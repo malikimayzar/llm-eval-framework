@@ -1,0 +1,163 @@
+{
+  "metadata": {
+    "dataset_name": "FastAPI QA Clean Cases — v1",
+    "source": "https://fastapi.tiangolo.com/tutorial/",
+    "sections_covered": [
+      "first-steps",
+      "path-params",
+      "query-params",
+      "query-params-str-validations",
+      "path-params-numeric-validations",
+      "body-multiple-params"
+    ],
+    "language": "bilingual — context: English (source), annotation: Indonesian",
+    "case_type": "clean",
+    "description_id": "Semua pertanyaan memiliki jawaban yang dapat ditemukan secara eksplisit dalam konteks dokumen yang diberikan. Ini adalah baseline: jika model gagal di sini, evaluasi sudah selesai.",
+    "total_cases": 10,
+    "schema_version": "1.0",
+    "created_by": "manual curation",
+    "eval_dimensions": ["faithfulness", "consistency"]
+  },
+  "cases": [
+    {
+      "id": "clean_001",
+      "topic": "Query Parameters — Default Values",
+      "context": "When you declare other function parameters that are not part of the path parameters, they are automatically interpreted as query parameters. The query is the set of key-value pairs that go after the ? in a URL, separated by & characters. For example, in the URL: http://127.0.0.1:8000/items/?skip=0&limit=10 the query parameters are: skip with a value of 0, and limit with a value of 10. As they are part of the URL, they are naturally strings. But when you declare them with Python types (in the example above, as int), they are converted to that type and validated against it. As query parameters are not a fixed part of a path, they can be optional and can have default values.",
+      "question": "What are the default values of the `skip` and `limit` query parameters in the example URL http://127.0.0.1:8000/items/?skip=0&limit=10?",
+      "ground_truth": "In that example URL, `skip` has a value of 0 and `limit` has a value of 10.",
+      "evidence_span": "the query parameters are: skip with a value of 0, and limit with a value of 10",
+      "annotation": {
+        "id": "anotasi_clean_001",
+        "kesulitan": "mudah",
+        "catatan": "Jawaban eksplisit tersedia langsung di konteks. Model yang menjawab dengan nilai lain kemungkinan menggunakan memori training, bukan konteks.",
+        "red_flag_jika": "Model menjawab nilai default berbeda atau mengatakan nilai tersebut tidak disebutkan."
+      }
+    },
+    {
+      "id": "clean_002",
+      "topic": "Query Parameters — Type Conversion",
+      "context": "When you declare other function parameters that are not part of the path parameters, they are automatically interpreted as query parameters. As they are part of the URL, they are naturally strings. But when you declare them with Python types (in the example above, as int), they are converted to that type and validated against it. All the same process that applied for path parameters also applies for query parameters: Editor support, Data parsing, Data validation, Automatic documentation.",
+      "question": "What happens to query parameter values that are declared with Python types in FastAPI?",
+      "ground_truth": "They are converted to that type and validated against it. The same process applied to path parameters — including editor support, data parsing, data validation, and automatic documentation — also applies to query parameters.",
+      "evidence_span": "when you declare them with Python types (in the example above, as int), they are converted to that type and validated against it",
+      "annotation": {
+        "id": "anotasi_clean_002",
+        "kesulitan": "sedang",
+        "catatan": "Model harus menyebut konversi tipe DAN validasi. Jika hanya menyebut salah satu, itu partial answer — tetap dilog sebagai unsupported claim parsial.",
+        "red_flag_jika": "Model menambahkan perilaku yang tidak disebutkan di konteks, seperti menyebut serialisasi atau caching."
+      }
+    },
+    {
+      "id": "clean_003",
+      "topic": "Path Parameters — Type Declaration",
+      "context": "You can declare the type of a path parameter in the function, using standard Python type annotations. In this case, item_id is declared to be an int. This will give you editor support inside of your function, with error checks, completion, etc. Notice that the value your function received (and returned) is 3, as a Python int, not a string '3'.",
+      "question": "If a path parameter `item_id` is declared as `int` in FastAPI, what type will the function receive when the URL contains `/items/3`?",
+      "ground_truth": "The function will receive the value 3 as a Python int, not as a string '3'.",
+      "evidence_span": "the value your function received (and returned) is 3, as a Python int, not a string '3'",
+      "annotation": {
+        "id": "anotasi_clean_003",
+        "kesulitan": "mudah",
+        "catatan": "Pertanyaan ini secara spesifik menguji apakah model membaca konteks atau menggunakan pengetahuan umum Python. Jawabannya identik, tapi sumber harus dari konteks.",
+        "red_flag_jika": "Model menjawab benar tapi tidak bisa menunjuk ke evidence span — artinya jawaban dari training data, bukan dokumen."
+      }
+    },
+    {
+      "id": "clean_004",
+      "topic": "Path Parameters — Ordering",
+      "context": "You can declare multiple path parameters and query parameters at the same time, FastAPI knows which is which. And you don't have to declare them in any specific order. FastAPI will detect the parameters by their names, types and default declarations (Query, Path, etc), it doesn't care about the order.",
+      "question": "Does FastAPI require path parameters and query parameters to be declared in a specific order in the function signature?",
+      "ground_truth": "No. FastAPI detects parameters by their names, types, and default declarations (such as Query or Path), and does not care about the order.",
+      "evidence_span": "You don't have to declare them in any specific order. FastAPI will detect the parameters by their names, types and default declarations (Query, Path, etc), it doesn't care about the order.",
+      "annotation": {
+        "id": "anotasi_clean_004",
+        "kesulitan": "mudah",
+        "catatan": "Ya/Tidak dengan justifikasi. Model yang hanya menjawab 'Tidak' tanpa penjelasan mekanismenya — klaim tidak sepenuhnya didukung.",
+        "red_flag_jika": "Model menyebut bahwa urutan penting dalam kondisi tertentu padahal konteks tidak menyebutkan kondisi tersebut."
+      }
+    },
+    {
+      "id": "clean_005",
+      "topic": "Query Parameters — Making Required",
+      "context": "As query parameters are not a fixed part of a path, they can be optional and can have default values. But when you want to make a query parameter required, you can just not declare any default value.",
+      "question": "How do you make a query parameter required in FastAPI?",
+      "ground_truth": "By not declaring any default value for the parameter.",
+      "evidence_span": "when you want to make a query parameter required, you can just not declare any default value",
+      "annotation": {
+        "id": "anotasi_clean_005",
+        "kesulitan": "mudah",
+        "catatan": "Jawaban singkat tapi kritis. Model yang menyebut cara lain (seperti menggunakan Required dari pydantic) tanpa dasar di konteks — itu unsupported claim.",
+        "red_flag_jika": "Model menjelaskan cara lain yang tidak ada di konteks ini."
+      }
+    },
+    {
+      "id": "clean_006",
+      "topic": "Query Validation — max_length",
+      "context": "You can pass more parameters to Query. In this case, the max_length parameter that applies to strings: q: str | None = Query(default=None, max_length=50). This will validate the data, show a clear error when the data is not valid, and document the parameter in the OpenAPI schema path operation.",
+      "question": "What are the three effects of adding `max_length=50` to a `Query()` declaration in FastAPI?",
+      "ground_truth": "It will validate the data, show a clear error when the data is not valid, and document the parameter in the OpenAPI schema path operation.",
+      "evidence_span": "This will validate the data, show a clear error when the data is not valid, and document the parameter in the OpenAPI schema path operation.",
+      "annotation": {
+        "id": "anotasi_clean_006",
+        "kesulitan": "sedang",
+        "catatan": "Model harus menyebut ketiga efek. Ini adalah multi-claim answer — setiap klaim dievaluasi secara independen dalam faithfulness scoring.",
+        "red_flag_jika": "Model hanya menyebut satu atau dua efek, atau menambahkan efek keempat yang tidak ada di konteks."
+      }
+    },
+    {
+      "id": "clean_007",
+      "topic": "OpenAPI Schema — Auto Generation",
+      "context": "FastAPI generates a schema with all your API using the OpenAPI standard for defining APIs. A schema is a definition or description of something. Not the code that implements it, but just an abstract description. In this case, OpenAPI is a specification that dictates how to define a schema of your API. This schema definition includes your API paths, the possible parameters they take, etc.",
+      "question": "What does the OpenAPI schema generated by FastAPI include?",
+      "ground_truth": "The schema definition includes your API paths and the possible parameters they take.",
+      "evidence_span": "This schema definition includes your API paths, the possible parameters they take, etc.",
+      "annotation": {
+        "id": "anotasi_clean_007",
+        "kesulitan": "mudah",
+        "catatan": "Konteks memberi definisi yang eksplisit. 'etc.' di dokumen asli disengaja — model yang melengkapi 'etc.' dengan detail spesifik tanpa dasar konteks berarti hallucinating.",
+        "red_flag_jika": "Model menambahkan bahwa schema juga mencakup response body, authentication, atau detail lain yang tidak disebutkan konteks ini."
+      }
+    },
+    {
+      "id": "clean_008",
+      "topic": "Path Parameters — File Path Type",
+      "context": "You can declare a path parameter containing a path using a URL like: /files/{file_path:path}. In this case, the name of the parameter is file_path, and the last part, :path, tells it that the parameter should match any path. You might need the parameter to contain /home/johndoe/myfile.txt, with a leading slash (/). In that case, the URL would be: /files//home/johndoe/myfile.txt, with a double slash (//) between files and home.",
+      "question": "If you want the URL to include the path `/home/johndoe/myfile.txt` as the value of `file_path`, what would the full URL look like?",
+      "ground_truth": "/files//home/johndoe/myfile.txt — with a double slash between `files` and `home`.",
+      "evidence_span": "the URL would be: /files//home/johndoe/myfile.txt, with a double slash (//) between files and home",
+      "annotation": {
+        "id": "anotasi_clean_008",
+        "kesulitan": "sedang",
+        "catatan": "Detail double slash ini sering menjadi failure point — model mungkin 'memperbaiki' URL menjadi /files/home/johndoe/myfile.txt karena secara intuitif double slash tampak salah.",
+        "red_flag_jika": "Model menghilangkan double slash dan menulis /files/home/johndoe/myfile.txt. Ini contoh model 'mengoreksi' dokumen menggunakan pengetahuan priorinya."
+      }
+    },
+    {
+      "id": "clean_009",
+      "topic": "HTTP Methods — Operations",
+      "context": "In the HTTP protocol, you can communicate to each path using one or more of these methods. When building APIs, you normally use these specific HTTP methods to perform a specific action: POST to create data, GET to read data, PUT to update data, DELETE to delete data. So, in OpenAPI, each of the HTTP methods is called an operation.",
+      "question": "According to FastAPI documentation, what HTTP method is used to update data?",
+      "ground_truth": "PUT is used to update data.",
+      "evidence_span": "PUT: to update data",
+      "annotation": {
+        "id": "anotasi_clean_009",
+        "kesulitan": "mudah",
+        "catatan": "Pertanyaan sederhana tapi berguna sebagai sanity check. Juga sebagai dasar untuk distractor case nantinya — konteks bisa dimodifikasi agar PATCH disebut sebagai update.",
+        "red_flag_jika": "Model menjawab PATCH — yang memang umum digunakan untuk update parsial — tapi tidak disebutkan dalam konteks ini."
+      }
+    },
+    {
+      "id": "clean_010",
+      "topic": "Body Parameters — embed",
+      "context": "Let's say you only have a single item body parameter from a Pydantic model Item. By default, FastAPI will then expect its body directly. But if you want it to expect a JSON with a key item and inside of it the model contents, as it does when you declare extra body parameters, you can use the special Body parameter embed.",
+      "question": "What happens by default when FastAPI receives a single Pydantic model as a body parameter?",
+      "ground_truth": "By default, FastAPI expects the body directly, without wrapping it in a key.",
+      "evidence_span": "By default, FastAPI will then expect its body directly.",
+      "annotation": {
+        "id": "anotasi_clean_010",
+        "kesulitan": "sedang",
+        "catatan": "Kontras antara perilaku default dan perilaku dengan embed adalah inti dari kasus ini. Model yang tidak menyebut 'langsung' atau 'tanpa key pembungkus' berarti jawabannya tidak cukup presisi.",
+        "red_flag_jika": "Model menjelaskan perilaku embed tanpa ditanya, atau mengatakan FastAPI selalu membungkus body dalam sebuah key."
+      }
+    }
+  ]
+}

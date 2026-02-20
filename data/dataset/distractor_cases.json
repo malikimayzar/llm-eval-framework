@@ -1,0 +1,120 @@
+{
+  "metadata": {
+    "dataset_name": "FastAPI QA Distractor Cases — v1",
+    "source": "https://fastapi.tiangolo.com/tutorial/",
+    "language": "bilingual — context: English (modified), annotation: Indonesian",
+    "case_type": "distractor",
+    "description_id": "Konteks dokumen sengaja dimodifikasi. Pertanyaan identik atau sangat mirip dengan clean cases. Tujuan: mendeteksi apakah model menjawab dari konteks yang diberikan atau dari memori training. Model yang tetap menjawab dengan yakin dan benar (sesuai training, bukan konteks) adalah red flag — artinya retrieval dependency rendah.",
+    "distractor_types": {
+      "value_swap": "Nilai angka atau string dalam konteks diganti dengan nilai yang salah",
+      "missing_critical_info": "Bagian konteks yang mengandung jawaban dihapus",
+      "contradictory_info": "Konteks dimodifikasi agar bertentangan dengan fakta yang benar"
+    },
+    "total_cases": 5,
+    "schema_version": "1.0",
+    "parent_clean_case": "referensi ke clean case yang menjadi basis distractor ini",
+    "eval_dimensions": ["retrieval_dependency", "faithfulness"]
+  },
+  "cases": [
+    {
+      "id": "distractor_001",
+      "distractor_type": "value_swap",
+      "parent_clean_case": "clean_001",
+      "topic": "Query Parameters — Default Values (MODIFIED: nilai ditukar)",
+      "modification_log": "Nilai default skip diubah dari 0 ke 5, nilai limit diubah dari 10 ke 100. URL di konteks juga diubah mengikuti nilai baru.",
+      "context": "When you declare other function parameters that are not part of the path parameters, they are automatically interpreted as query parameters. The query is the set of key-value pairs that go after the ? in a URL, separated by & characters. For example, in the URL: http://127.0.0.1:8000/items/?skip=5&limit=100 the query parameters are: skip with a value of 5, and limit with a value of 100. As they are part of the URL, they are naturally strings. But when you declare them with Python types (in the example above, as int), they are converted to that type and validated against it. As query parameters are not a fixed part of a path, they can be optional and can have default values.",
+      "question": "What are the values of the `skip` and `limit` query parameters in the example URL shown in the documentation?",
+      "ground_truth_from_context": "Based on the provided context, `skip` has a value of 5 and `limit` has a value of 100.",
+      "ground_truth_original": "In the original FastAPI docs, skip=0 and limit=10.",
+      "evidence_span": "skip with a value of 5, and limit with a value of 100",
+      "annotation": {
+        "id": "anotasi_distractor_001",
+        "kesulitan": "sedang",
+        "jenis_manipulasi": "value_swap — nilai diganti, struktur kalimat sama",
+        "perilaku_yang_diharapkan": "Model yang faithful ke konteks akan menjawab skip=5 dan limit=100 sesuai konteks yang diberikan.",
+        "red_flag_jika": "Model menjawab skip=0 dan limit=10 — artinya model mengabaikan konteks dan menjawab dari memori training. Ini adalah retrieval dependency failure yang paling klasik.",
+        "catatan_evaluator": "Catat dengan tepat: apakah model mengakui bahwa nilainya berbeda dari yang umum diketahui? Model yang mengatakan 'biasanya skip=0' padahal konteks mengatakan 5 — itu bukti kuat bahwa model tidak membaca konteks."
+      }
+    },
+    {
+      "id": "distractor_002",
+      "distractor_type": "contradictory_info",
+      "parent_clean_case": "clean_009",
+      "topic": "HTTP Methods — Operations (MODIFIED: mapping method dibalik)",
+      "modification_log": "Mapping HTTP method diubah: PUT sekarang disebut untuk create, POST untuk update. Ini bertentangan dengan konvensi REST yang sudah diketahui model dari training.",
+      "context": "In the HTTP protocol, you can communicate to each path using one or more of these methods. When building APIs, you normally use these specific HTTP methods to perform a specific action: PUT to create data, POST to update data, GET to read data, DELETE to delete data. So, in OpenAPI, each of the HTTP methods is called an operation.",
+      "question": "According to the documentation provided, what HTTP method is used to update data?",
+      "ground_truth_from_context": "Based on the provided context, POST is used to update data.",
+      "ground_truth_original": "In standard REST and original FastAPI docs, PUT is used to update data.",
+      "evidence_span": "POST to update data",
+      "annotation": {
+        "id": "anotasi_distractor_002",
+        "kesulitan": "tinggi",
+        "jenis_manipulasi": "contradictory_info — konteks bertentangan langsung dengan pengetahuan umum model",
+        "perilaku_yang_diharapkan": "Model yang faithful ke konteks akan menjawab POST sesuai yang tertulis, meski ini bertentangan dengan konvensi REST yang diketahuinya.",
+        "red_flag_jika": "Model menjawab PUT — artinya model lebih percaya pada training knowledge daripada konteks yang diberikan. Ini adalah failure paling berbahaya dalam production RAG system.",
+        "catatan_evaluator": "Ini adalah test case paling diagnostik dalam seluruh dataset. Model yang 'terlalu pintar' akan gagal di sini. Catat juga apakah model memberikan disclaimer seperti 'seharusnya PUT' — itu sinyal bahwa model mendeteksi konflik tapi tetap tidak faithful ke konteks."
+      }
+    },
+    {
+      "id": "distractor_003",
+      "distractor_type": "missing_critical_info",
+      "parent_clean_case": "clean_005",
+      "topic": "Query Parameters — Making Required (MODIFIED: penjelasan cara membuat required dihapus)",
+      "modification_log": "Kalimat yang menjelaskan cara membuat query parameter required ('you can just not declare any default value') dihapus dari konteks. Hanya kalimat setup yang tersisa.",
+      "context": "As query parameters are not a fixed part of a path, they can be optional and can have default values. In some cases you may want a query parameter to be required rather than optional.",
+      "question": "How do you make a query parameter required in FastAPI?",
+      "ground_truth_from_context": "The provided context does not contain sufficient information to answer this question. The context only states that query parameters can be required, but does not explain how.",
+      "ground_truth_original": "By not declaring any default value for the parameter.",
+      "evidence_span": null,
+      "annotation": {
+        "id": "anotasi_distractor_003",
+        "kesulitan": "tinggi",
+        "jenis_manipulasi": "missing_critical_info — jawaban tidak ada di konteks",
+        "perilaku_yang_diharapkan": "Model seharusnya menyatakan bahwa konteks tidak cukup untuk menjawab pertanyaan ini, atau menyatakan ketidakpastian secara eksplisit.",
+        "red_flag_jika": "Model menjawab dengan yakin 'dengan tidak mendeklarasikan default value' — artinya model menjawab dari training, bukan dari konteks. Faithfulness score: 0 karena tidak ada evidence span yang bisa di-match.",
+        "catatan_evaluator": "Ini menguji apakah model tahu batas pengetahuannya berdasarkan konteks. Model yang confident tanpa evidence adalah model yang tidak bisa dipercaya dalam RAG pipeline."
+      }
+    },
+    {
+      "id": "distractor_004",
+      "distractor_type": "value_swap",
+      "parent_clean_case": "clean_008",
+      "topic": "Path Parameters — File Path (MODIFIED: sintaks path type diganti)",
+      "modification_log": "Sintaks :path dalam deklarasi path parameter diubah menjadi :filepath. URL contoh juga disesuaikan. Ini adalah perubahan subtle yang mudah dilewatkan.",
+      "context": "You can declare a path parameter containing a path using a URL like: /files/{file_path:filepath}. In this case, the name of the parameter is file_path, and the last part, :filepath, tells it that the parameter should match any path. You might need the parameter to contain /home/johndoe/myfile.txt, with a leading slash (/). In that case, the URL would be: /files//home/johndoe/myfile.txt, with a double slash (//) between files and home.",
+      "question": "What syntax is used after the colon in the path parameter declaration to indicate that it should match any path?",
+      "ground_truth_from_context": "Based on the provided context, the syntax used is `:filepath`.",
+      "ground_truth_original": "In the original FastAPI docs, the correct syntax is `:path`, not `:filepath`.",
+      "evidence_span": "the last part, :filepath, tells it that the parameter should match any path",
+      "annotation": {
+        "id": "anotasi_distractor_004",
+        "kesulitan": "tinggi",
+        "jenis_manipulasi": "value_swap — sintaks teknis diganti dengan variasi yang terlihat masuk akal",
+        "perilaku_yang_diharapkan": "Model yang faithful ke konteks akan menjawab :filepath sesuai yang tertulis di konteks yang diberikan.",
+        "red_flag_jika": "Model menjawab :path — karena itu yang benar secara teknis dan ada di training data. Ini adalah failure case yang sangat subtle dan sangat berbahaya dalam konteks dokumentasi teknis.",
+        "catatan_evaluator": "Distractor ini sengaja menggunakan perubahan yang 'masuk akal' (:filepath terdengar valid). Ini lebih realistis daripada perubahan yang jelas salah, dan lebih relevan untuk menilai ketergantungan model pada retrieved context."
+      }
+    },
+    {
+      "id": "distractor_005",
+      "distractor_type": "contradictory_info",
+      "parent_clean_case": "clean_006",
+      "topic": "Query Validation — max_length (MODIFIED: jumlah efek dikurangi, satu efek diganti)",
+      "modification_log": "Tiga efek asli (validate, error, document) diubah: efek 'document the parameter in the OpenAPI schema' dihapus, diganti dengan efek palsu 'cache the parameter value for performance'.",
+      "context": "You can pass more parameters to Query. In this case, the max_length parameter that applies to strings: q: str | None = Query(default=None, max_length=50). This will validate the data, show a clear error when the data is not valid, and cache the parameter value for performance.",
+      "question": "What are the three effects of adding `max_length=50` to a `Query()` declaration in FastAPI?",
+      "ground_truth_from_context": "Based on the provided context, the three effects are: validate the data, show a clear error when the data is not valid, and cache the parameter value for performance.",
+      "ground_truth_original": "The original three effects are: validate the data, show a clear error when the data is not valid, and document the parameter in the OpenAPI schema path operation. Caching is not mentioned anywhere in FastAPI docs.",
+      "evidence_span": "This will validate the data, show a clear error when the data is not valid, and cache the parameter value for performance.",
+      "annotation": {
+        "id": "anotasi_distractor_005",
+        "kesulitan": "sangat tinggi",
+        "jenis_manipulasi": "contradictory_info — satu efek yang benar diganti dengan efek palsu yang terdengar masuk akal secara teknis",
+        "perilaku_yang_diharapkan": "Model yang faithful ke konteks akan menyebutkan caching sebagai salah satu dari tiga efek, meski ini tidak benar secara teknis.",
+        "red_flag_jika": "Model mengoreksi konteks dan menyebut 'document in OpenAPI schema' alih-alih 'cache' — artinya model menggunakan training knowledge untuk menimpa konteks. Ini adalah failure paling sophisticated dan paling menarik untuk dijelaskan di laporan.",
+        "catatan_evaluator": "Ini menguji apakah model akan 'memperbaiki' dokumentasi yang terlihat salah. Di satu sisi, memperbaiki error terdengar helpful. Tapi dalam RAG context, itu adalah faithfulness violation — model tidak bisa dipercaya untuk mengikuti konteks yang diberikan."
+      }
+    }
+  ]
+}
