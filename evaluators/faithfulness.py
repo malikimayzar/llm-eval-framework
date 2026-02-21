@@ -1,4 +1,5 @@
 import re
+from difflib import SequenceMatcher
 import json
 import logging
 from dataclasses import dataclass, asdict
@@ -7,6 +8,29 @@ from datetime import datetime, timezone
 import numpy as np
 import requests
 
+
+# ---------------------------------------------------------------------------
+# Short answer helpers
+# ---------------------------------------------------------------------------
+
+def _normalize(text: str) -> str:
+    """Lowercase, strip punctuation, collapse whitespace."""
+    text = text.lower().strip()
+    text = re.sub(r"[^\w\s]", "", text)
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def _char_similarity(a: str, b: str) -> float:
+    """Character-level similarity via SequenceMatcher (0-1)."""
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def _is_short_answer(answer: str) -> bool:
+    """Cek apakah jawaban termasuk kategori singkat."""
+    return len(answer.strip().split()) < SHORT_ANSWER_WORD_THRESHOLD
+
+
 logger = logging.getLogger("faithfulness")
 
 # Konstanta
@@ -14,6 +38,8 @@ DEFAULT_SIMILARITY_THRESHOLD = 0.75
 INSUFFICIENT_VALIDATION_THRESHOLD = 0.65
 INSUFFICIENT_VALIDATION_THRESHOLD = 0.65
 MIN_CLAIM_LENGTH_WORDS = 2
+SHORT_ANSWER_WORD_THRESHOLD = 5
+SHORT_ANSWER_CHAR_SIM_THRESHOLD = 0.85
 INSUFFICIENT_CONTEXT_SIGNAL = "INSUFFICIENT_CONTEXT"
 OLLAMA_BASE_URL = "http://localhost:11434"
 EMBEDDING_MODEL = "nomic-embed-text"
@@ -62,6 +88,7 @@ class FaithfulnessResult:
     embedding_model: str
     evaluator_version: str
     timestamp_utc: str
+    evaluation_path: str = "claim_extraction"
 
 
 # Ollama Embedder
@@ -303,6 +330,84 @@ class FaithfulnessEvaluator:
 
     def health_check(self) -> bool:
         return self.embedder.health_check()
+
+    def _evaluate_short_answer(
+        self,
+        case: dict,
+        answer: str,
+        model_name: str,
+    ) -> "FaithfulnessResult":
+        """Path alternatif untuk jawaban singkat (< SHORT_ANSWER_WORD_THRESHOLD kata)."""
+        case_id      = case["id"]
+        context      = case["context"]
+        question     = case["question"]
+        ground_truth = case.get("ground_truth", "")
+
+        norm_answer = _normalize(answer)
+        norm_truth  = _normalize(ground_truth)
+        norm_ctx    = _normalize(context)
+
+        # Tahap 1: Exact match
+        if norm_answer == norm_truth:
+            match_type = "exact"
+            base_score = 1.0
+            matched    = True
+        # Tahap 2: Substring match
+        elif norm_answer in norm_truth or norm_truth in norm_answer:
+            match_type = "substring"
+            base_score = 0.9
+            matched    = True
+        # Tahap 3: Character similarity
+        else:
+            char_sim   = _char_similarity(norm_answer, norm_truth)
+            matched    = char_sim >= SHORT_ANSWER_CHAR_SIM_THRESHOLD
+            match_type = "char_similarity" if matched else "no_match"
+            base_score = round(char_sim, 4)
+
+        grounded = norm_answer in norm_ctx
+        score    = base_score if (grounded or matched) else round(base_score * 0.5, 4)
+        has_fail = not matched
+
+        diagnosis = (
+            f"Short answer ({len(answer.split())} words). "
+            f"Match: {match_type}. Grounded: {grounded}. Score: {score}."
+        )
+
+        failure_cases = []
+        if has_fail:
+            failure_cases.append({
+                "claim_id": f"{case_id}_short_answer",
+                "unsupported_claim": answer,
+                "similarity_score": base_score,
+                "diagnosis": diagnosis,
+            })
+
+        logger.log(
+            logging.WARNING if has_fail else logging.INFO,
+            f"Short answer eval | case_id={case_id} | "
+            f"match={match_type} | score={score} | grounded={grounded}"
+        )
+
+        return FaithfulnessResult(
+            case_id=case_id,
+            model=model_name,
+            question=question,
+            model_answer=answer,
+            context_length_chars=len(context),
+            total_claims=1,
+            supported_count=1 if matched else 0,
+            unsupported_count=0 if matched else 1,
+            skipped_count=0,
+            faithfulness_score=score,
+            has_failure=has_fail,
+            failure_cases=failure_cases,
+            is_insufficient_context_response=False,
+            evaluation_path="short_answer_exact_match",
+            embedding_model=self.embedding_model,
+            similarity_threshold=self.similarity_threshold,
+            evaluator_version=self.VERSION,
+            timestamp_utc=datetime.now(timezone.utc).isoformat(),
+        )
 
     def evaluate(
         self,
