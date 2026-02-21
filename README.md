@@ -203,3 +203,15 @@ It is a reusable framework for asking specific, verifiable questions about LLM b
 ## License
 
 MIT
+---
+
+## Results
+
+### Faithfulness — Clean Dataset
+![Clean](reports/charts/faithfulness_clean.png)
+
+### Faithfulness — Distractor Dataset
+![Distractor](reports/charts/faithfulness_distractor.png)
+
+### Clean vs Distractor Comparison
+![Comparison](reports/charts/comparison_clean_vs_distractor.png)
