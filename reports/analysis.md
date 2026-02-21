@@ -31,3 +31,34 @@ Dari 10 cases, 6 timeout setelah 600s. Tapi beberapa case yang sama berhasil dis
 
 ### Fix
 Timeout dinaikkan ke 900s untuk run kedua. Jika masih ada timeout, evaluasi perlu dijalankan dengan jeda antar query untuk memberi CPU waktu recovery.
+
+---
+
+## Hasil Eval Lengkap — Mistral, Clean Dataset (Run 2)
+
+**Run ID:** 20260221_074512  
+**Total waktu:** 160 menit  
+**Timeout setting:** 900s
+
+| Case | Score | Keterangan |
+|------|-------|-----------|
+| clean_001 | 0.0 | FALSE INSUFFICIENT_CONTEXT (sim=0.7249) |
+| clean_002 | 1.0 | Perfect |
+| clean_003 | 1.0 | Perfect |
+| clean_004 | 0.0 | FALSE INSUFFICIENT_CONTEXT (sim=0.9691) — kasus ekstrem |
+| clean_005 | 1.0 | Perfect |
+| clean_006 | 0.667 | Hallucination terdeteksi: tambah info OpenAPI schema |
+| clean_007 | 1.0 | Perfect |
+| clean_008 | 0.0 | Jawaban terlalu singkat: '/files/home/johndoe/myfile.txt' |
+| clean_009 | 0.0 | Jawaban terlalu singkat: 'PUT' |
+| clean_010 | 1.0 | Perfect |
+
+**Avg faithfulness score: 0.567 (56.7%)**
+
+### Observasi Kritis
+
+**clean_004** adalah failure case paling ekstrem: similarity ground_truth ke konteks 0.9691 — hampir sempurna — tapi model menjawab `INSUFFICIENT_CONTEXT` tanpa mencoba. Ini bukan ambiguitas, ini kegagalan total membaca konteks.
+
+**clean_006** adalah satu-satunya genuine hallucination yang tertangkap: model menambahkan *"Documentation of the max_length parameter in the OpenAPI schema"* yang tidak ada di konteks. Framework berhasil mendeteksi ini dengan score 0.667.
+
+**clean_008 dan clean_009** mengekspos blind spot evaluator: jawaban factually correct tapi tidak evaluable karena terlalu singkat. Exact match terhadap ground_truth adalah solusi yang tepat untuk kasus ini.
