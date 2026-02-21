@@ -217,3 +217,16 @@ MIT
 
 ### Clean vs Distractor Comparison
 ![Comparison](reports/charts/comparison_clean_vs_distractor.png)
+
+---
+
+## Results
+
+### Faithfulness — Clean Dataset
+![Clean](reports/charts/faithfulness_clean.png)
+
+### Faithfulness — Distractor Dataset
+![Distractor](reports/charts/faithfulness_distractor.png)
+
+### Clean vs Distractor Comparison
+![Comparison](reports/charts/comparison_clean_vs_distractor.png)
