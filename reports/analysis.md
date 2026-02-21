@@ -1,9 +1,9 @@
 # Evaluation Analysis Report
-## LLM Faithfulness & Consistency Framework — v1.0
+## LLM Faithfulness & Consistency Framework — v1.1
 
-**Model evaluated:** phi3:mini (development), mistral (eval target)  
-**Dataset:** FastAPI documentation (20 clean cases, 5 distractor cases, 6 paraphrase cases)  
-**Infrastructure:** CPU-only, 16GB RAM, Ollama local inference  
+**Models evaluated:** phi3:mini (development), mistral (primary eval)
+**Dataset:** FastAPI documentation — 10 clean cases, 5 distractor cases, 6 paraphrase cases
+**Infrastructure:** CPU-only, 16GB RAM, Ollama local inference
 **Date:** February 2026
 
 ---
@@ -18,178 +18,14 @@ Laporan ini mendokumentasikan observasi empiris dari menjalankan framework terha
 
 ---
 
-## Finding 1: False INSUFFICIENT_CONTEXT
+## Hasil Evaluasi Lengkap
 
-### Observasi
-phi3:mini secara konsisten menjawab `INSUFFICIENT_CONTEXT` untuk `clean_001` — pertanyaan tentang nilai default `skip` dan `limit` dalam URL contoh — meskipun konteks secara eksplisit menyebutkan:
+### Mistral — Clean Dataset
 
-> *"the query parameters are: skip with a value of 0, and limit with a value of 10"*
-
-Jawaban model:
-> *"The context does not provide information about specific default values for the `skip` and `limit` query parameters in this example URL, so INSUFFICIENT_CONTEXT."*
-
-### Analisis
-Ini bukan model yang jujur mengakui keterbatasan. Ini model yang **gagal membaca konteks dengan benar**, lalu berlindung di balik escape hatch yang disediakan prompt.
-
-Framework versi pertama memberi score 1.0 untuk behavior ini — karena mengakui keterbatasan dianggap faithful. Setelah menemukan false positive ini, framework diperbarui dengan **validasi dua tahap**:
-
-1. Jika model bilang `INSUFFICIENT_CONTEXT`, cek similarity antara `ground_truth` dan konteks menggunakan embedding.
-2. Jika similarity ≥ 0.65, evidence ada di konteks — model gagal membaca. Ini `FALSE_INSUFFICIENT_CONTEXT` dengan score 0.0.
-
-### Implikasi
-Prompt yang terlalu agresif memberikan escape hatch (`INSUFFICIENT_CONTEXT`) mendorong model untuk under-answer. Ini tradeoff yang perlu dipertimbangkan dalam desain prompt RAG system.
-
-### Threshold yang Ditemukan
-- Evidence matching threshold: **0.75** (untuk klaim panjang)  
-- Insufficient context validation threshold: **0.65** (lebih rendah karena ground truth biasanya lebih ringkas dari span konteks)
-
-Kedua threshold ini berbeda secara fundamental dan tidak bisa disamakan.
-
----
-
-## Finding 2: Claim Extraction Gagal pada Enumeration List
-
-### Observasi
-Jawaban model:
-> *"The OpenAPI schema includes your API paths, parameters, authentication methods, response schemas, and rate limiting configuration."*
-
-Claim extractor versi pertama mengekstrak ini sebagai **satu klaim**, bukan lima klaim atomik. Akibatnya, evaluasi faithfulness tidak granular — satu klaim yang berisi lima item dievaluasi sekaligus, dan item yang tidak didukung konteks ikut "lolos" bersama item yang valid.
-
-### Fix
-Ditambahkan `_expand_enumeration()` — fungsi yang mendeteksi pola `"X includes A, B, C, and D"` dan mengekspansinya menjadi klaim atomik:
-
-- `"The OpenAPI schema includes API paths."`
-- `"The OpenAPI schema includes parameters."`  
-- `"The OpenAPI schema includes authentication methods."` ← tidak didukung konteks
-- `"The OpenAPI schema includes response schemas."` ← tidak didukung konteks
-- `"The OpenAPI schema includes rate limiting configuration."` ← tidak didukung konteks
-
-Setelah fix, faithfulness score berubah dari **1.0 → 0.6** untuk jawaban yang sama. Dua klaim yang tidak didukung konteks kini terdeteksi.
-
-### Implikasi
-Granularitas claim extraction sangat menentukan kualitas evaluasi. Evaluator yang mengevaluasi kalimat panjang sebagai satu unit akan banyak menghasilkan false positive.
-
----
-
-## Finding 3: nomic-embed-text Menganggap Paraphrase sebagai Semantically Berbeda
-
-### Observasi
-Dalam consistency evaluator, dua jawaban berikut dianggap semantically berbeda (similarity: **0.7677**, di bawah threshold 0.80):
-
-- Jawaban A: `"By not declaring any default value for the parameter."`
-- Jawaban B: `"You can make it required by not providing a default value."`
-
-Keduanya memiliki makna yang identik.
-
-### Analisis
-Ini bukan bug framework — ini **limitation dari embedding model**. nomic-embed-text dioptimalkan untuk document-level similarity, bukan sentence-level semantic equivalence. Kalimat pendek dengan kata kerja berbeda (`declaring` vs `providing`, `default value` vs `default value`) menghasilkan embedding yang cukup berbeda.
-
-**Implikasinya untuk framework:**
-- Threshold 0.80 terlalu ketat untuk paraphrase detection di level kalimat
-- Threshold diturunkan ke **0.72** setelah observasi empiris
-- Masih ada false positive tersisa: "by not providing a default value" vs "simply omit the default value declaration" (similarity: 0.7756)
-
-### Implikasi
-Semantic similarity berbasis embedding tidak cukup untuk mendeteksi semantic equivalence pada kalimat pendek dan padat. Untuk domain teknis yang menggunakan terminologi spesifik, lexical overlap (ROUGE-L) memberikan sinyal komplementer yang penting.
-
----
-
-## Finding 4: Semantic Similarity Tidak Mendeteksi Factual Inconsistency
-
-### Observasi
-Dalam retrieval dependency evaluator, jawaban `"PUT is used to update data"` vs `"PATCH is the correct HTTP method for partial updates"` menunjukkan similarity **0.8337** — di atas threshold, dianggap "konsisten".
-
-Padahal keduanya memberikan jawaban yang berbeda untuk pertanyaan yang sama.
-
-### Analisis
-Embedding model mendeteksi bahwa kedua kalimat membahas topik yang sama (HTTP methods untuk update data). Tapi tidak bisa mendeteksi bahwa `PUT ≠ PATCH` secara faktual.
-
-Ini adalah **fundamental limitation dari pendekatan embedding-based evaluation**: similarity topik ≠ similarity fakta.
-
-### Implikasi
-Untuk mendeteksi factual inconsistency (bukan hanya topical inconsistency), dibutuhkan layer evaluasi tambahan — misalnya entity extraction atau structured fact comparison. Ini adalah area pengembangan selanjutnya yang jelas arahnya.
-
----
-
-## Finding 5: Latency sebagai Constraint Nyata
-
-### Observasi
-| Model | Context Length | Latency per Query |
-|-------|----------------|-------------------|
-| mistral | Panjang (~300 token) | ~320 detik |
-| phi3:mini | Pendek (~50 token) | ~245 detik |
-| phi3:mini | Sangat pendek | ~40 detik (via curl) |
-
-Latency 4-5 menit per query pada CPU-only setup (16GB RAM) adalah constraint nyata yang membentuk cara framework ini digunakan.
-
-### Keputusan Engineering
-- Development: gunakan model ringan dengan context minimal untuk verifikasi pipeline
-- Eval final: jalankan dengan Mistral dan dataset lengkap — satu kali, biarkan jalan
-- Unit test: tidak pernah hit Ollama — semua test menggunakan jawaban hardcoded
-
-### Implikasi
-Framework ini dirancang untuk reproducibility, bukan speed. Siapa pun dengan laptop 16GB RAM dan koneksi internet untuk download model dapat mereproduksi semua hasil — tanpa GPU, tanpa API berbayar.
-
----
-
-## Limitation yang Diakui
-
-**1. Single embedding model.**  
-Semua similarity calculation menggunakan nomic-embed-text. Hasil dapat berbeda dengan embedding model lain. Threshold yang dikalibrasi untuk nomic-embed-text mungkin perlu disesuaikan untuk model lain.
-
-**2. Single LLM.**  
-Evaluasi hanya dijalankan pada phi3:mini (development) dan mistral (target). Generalisasi ke model lain belum diverifikasi.
-
-**3. Threshold dikalibrasi secara empiris.**  
-Semua threshold (0.75, 0.65, 0.72, 0.70) ditentukan berdasarkan observasi dari dataset kecil (20-31 cases). Dataset yang lebih besar mungkin memerlukan re-kalibrasi.
-
-**4. Domain terbatas.**  
-Dataset hanya mencakup dokumentasi FastAPI. Behavior model pada domain teknis lain (misalnya dokumentasi database, protokol jaringan) belum dievaluasi.
-
-**5. ROUGE-L sensitivity.**  
-ROUGE-L sangat sensitif terhadap stopwords dan urutan kata. Jawaban yang semantically identik tapi menggunakan struktur kalimat berbeda akan mendapat ROUGE-L rendah.
-
-## Finding 6: Jawaban Terlalu Singkat untuk Dievaluasi
-
-### Observasi
-Dari run pertama (mistral, clean dataset), dua case menghasilkan jawaban yang benar secara faktual tapi tidak bisa dievaluasi:
-
-- **clean_008**: `'/files/home/johndoe/myfile.txt'` — path string, bukan kalimat deklaratif
-- **clean_009**: `'PUT'` — satu kata, tidak ada struktur klaim
-
-Kedua jawaban ini menghasilkan `score=0.0` bukan karena salah, tapi karena claim extractor tidak bisa mengekstrak klaim yang evaluable.
-
-### Fix
-`MIN_CLAIM_LENGTH_WORDS` diturunkan dari 4 ke 2. Tapi ini hanya partial fix — jawaban single-word seperti `'PUT'` tetap tidak bisa dievaluasi faithfulness-nya karena tidak ada klaim yang bisa di-trace ke konteks.
-
-### Implikasi
-Faithfulness evaluation memiliki blind spot untuk jawaban yang benar tapi ekstremal singkat. Untuk kasus ini, evaluasi yang tepat adalah exact match terhadap `ground_truth`, bukan semantic similarity. Ini area pengembangan selanjutnya.
-
----
-
-## Finding 7: Timeout Tidak Konsisten pada CPU Inference
-
-### Observasi
-Dari 10 cases, 6 timeout setelah 600s. Tapi beberapa case yang sama berhasil diselesaikan Mistral dalam 380-648s. Artinya bukan konteks yang terlalu panjang — ada variabilitas yang tidak terprediksi dalam CPU inference time.
-
-### Kemungkinan Penyebab
-- Memory pressure saat model pertama kali di-load ke RAM
-- Thermal throttling setelah beberapa query berturut-turut
-- Panjang output yang bervariasi — query yang memicu jawaban panjang butuh waktu lebih lama
-
-### Fix
-Timeout dinaikkan ke 900s untuk run kedua. Jika masih ada timeout, evaluasi perlu dijalankan dengan jeda antar query untuk memberi CPU waktu recovery.
-
----
-
-## Hasil Eval Lengkap — Mistral, Clean Dataset (Run 2)
-
-**Run ID:** 20260221_074512  
-**Total waktu:** 160 menit  
-**Timeout setting:** 900s
+**Run ID:** 20260221_074512 | **Total waktu:** 160 menit | **Timeout:** 900s
 
 | Case | Score | Keterangan |
-|------|-------|-----------|
+|------|-------|------------|
 | clean_001 | 0.0 | FALSE INSUFFICIENT_CONTEXT (sim=0.7249) |
 | clean_002 | 1.0 | Perfect |
 | clean_003 | 1.0 | Perfect |
@@ -201,42 +37,40 @@ Timeout dinaikkan ke 900s untuk run kedua. Jika masih ada timeout, evaluasi perl
 | clean_009 | 0.0 | Jawaban terlalu singkat: 'PUT' |
 | clean_010 | 1.0 | Perfect |
 
-**Avg faithfulness score: 0.567 (56.7%)**
-
-### Observasi Kritis
-
-**clean_004** adalah failure case paling ekstrem: similarity ground_truth ke konteks 0.9691 — hampir sempurna — tapi model menjawab `INSUFFICIENT_CONTEXT` tanpa mencoba. Ini bukan ambiguitas, ini kegagalan total membaca konteks.
-
-**clean_006** adalah satu-satunya genuine hallucination yang tertangkap: model menambahkan *"Documentation of the max_length parameter in the OpenAPI schema"* yang tidak ada di konteks. Framework berhasil mendeteksi ini dengan score 0.667.
-
-**clean_008 dan clean_009** mengekspos blind spot evaluator: jawaban factually correct tapi tidak evaluable karena terlalu singkat. Exact match terhadap ground_truth adalah solusi yang tepat untuk kasus ini.
+**Avg faithfulness: 56.7% | Perfect: 5/10 | Failure rate: 50%**
 
 ---
 
-## Hasil Eval Lengkap — Mistral, Distractor Dataset
+### Mistral — Distractor Dataset
 
-**Run ID:** 20260221_103528
-**Total waktu:** 120 menit
+**Run ID:** 20260221_103528 | **Total waktu:** 120 menit
 
 | Case | Score | Jawaban Model | Keterangan |
-|------|-------|---------------|-----------|
+|------|-------|---------------|------------|
 | distractor_001 | 0.0 | skip=5, limit=100 | Mengikuti nilai yang dimanipulasi |
 | distractor_002 | 0.0 | POST | Mengikuti HTTP method yang dibalik |
 | distractor_003 | N/A | (kosong) | Inference failed |
 | distractor_004 | 0.0 | :filepath | Jawaban terlalu singkat |
 | distractor_005 | 0.333 | 3 poin, 1 hallucination | Tambah "caching" yang tidak ada di konteks |
 
-**Avg faithfulness: 8.3% — turun dari 56.7% di clean dataset**
+**Avg faithfulness: 8.3% | Perfect: 0/5 | Failure rate: 100%**
 
-### Temuan Utama
+---
 
-**Mistral faithful ke konteks, termasuk konteks yang salah.**
+### Model Comparison — Mistral vs phi3:mini (Clean Dataset)
 
-distractor_001 dan distractor_002 membuktikan ini: model tidak menggunakan training knowledge untuk "koreksi" konteks yang dimanipulasi. Ketika konteks bilang `skip=5, limit=100`, model menjawab persis itu — meski nilai asli yang benar adalah `skip=0, limit=10`.
+| Metrik | Mistral | phi3:mini |
+|--------|---------|-----------|
+| Avg faithfulness | **56.7%** | 46.7% |
+| Perfect score (1.0) | 5/10 | 4/10 |
+| Failure rate | 50% | 60% |
+| False INSUFFICIENT_CTX | 2 | 2 |
+| Avg latency per case | 463.7s | **222.9s** |
+| Total eval time | 160 min | 77.7 min |
 
-Ini adalah behavior yang diharapkan dari RAG system yang well-behaved. Tapi juga berarti: **garbage in, garbage out**. Kualitas retrieval menentukan kualitas jawaban.
+---
 
-### Perbandingan Clean vs Distractor
+### Clean vs Distractor Comparison
 
 | Metrik | Clean Dataset | Distractor Dataset |
 |--------|--------------|-------------------|
@@ -245,30 +79,177 @@ Ini adalah behavior yang diharapkan dari RAG system yang well-behaved. Tapi juga
 | Failure rate | 50% | 100% |
 | False INSUFFICIENT_CTX | 2 | 0 |
 
-Penurunan 56.7% → 8.3% mengkonfirmasi bahwa evaluator sensitif terhadap manipulasi konteks — bukan hanya mengukur topical similarity.
 ---
 
-## Model Comparison — Mistral vs phi3:mini (Clean Dataset)
+## Findings
 
-| Metrik | Mistral | phi3:mini |
-|--------|---------|-----------|
-| Avg faithfulness | 56.7% | 46.7% |
-| Perfect score (1.0) | 5/10 | 4/10 |
-| Failure rate | 50% | 60% |
-| False INSUFFICIENT_CTX | 2 | 2 |
-| Avg latency per case | 463.7s | 222.9s |
-| Total eval time | 160 min | 77.7 min |
+### Finding 1: False INSUFFICIENT_CONTEXT
 
-### Observasi
+**Observasi:**
+Mistral menjawab `INSUFFICIENT_CONTEXT` untuk clean_001 dan clean_004 meskipun evidence ada di konteks dengan jelas. clean_004 adalah kasus ekstrem — similarity ground_truth ke konteks mencapai 0.9691 tapi model tetap menolak menjawab.
 
-**Mistral lebih faithful, phi3:mini lebih cepat.**
-Mistral menghasilkan faithfulness 10% lebih tinggi (56.7% vs 46.7%) dengan failure rate lebih rendah (50% vs 60%). Tapi phi3:mini 2x lebih cepat per case — tradeoff yang relevan untuk development iteration.
+phi3:mini menunjukkan behavior yang sama pada dua case berbeda.
 
-**Kedua model sama-sama over-trigger INSUFFICIENT_CONTEXT.**
-Dua false insufficient context terdeteksi di kedua model. Ini bukan kebetulan — prompt yang memberikan escape hatch terlalu agresif mendorong model untuk under-answer, terlepas dari ukuran model.
+**Analisis:**
+Ini bukan model yang jujur mengakui keterbatasan. Ini model yang gagal membaca konteks, lalu berlindung di balik escape hatch yang disediakan prompt. Framework versi pertama memberi score 1.0 untuk behavior ini — salah.
 
-**phi3:mini lebih verbose tapi kurang presisi.**
-clean_007 menunjukkan phi3:mini menghasilkan 7 klaim dari satu jawaban — semuanya semantically close tapi di bawah threshold. Model mencoba menjawab terlalu lengkap, tapi tidak cukup grounded ke konteks.
+**Fix:**
+Ditambahkan validasi dua tahap:
+1. Jika model bilang `INSUFFICIENT_CONTEXT`, cek similarity antara `ground_truth` dan konteks.
+2. Jika similarity ≥ 0.65, evidence ada → FALSE_INSUFFICIENT_CONTEXT → score 0.0.
 
-**clean_008 dan clean_009 tetap blind spot di kedua model.**
-Jawaban singkat ('PUT', '/files/...') tidak bisa dievaluasi faithfulness di model manapun. Ini mengkonfirmasi bahwa exact match adalah solusi yang dibutuhkan, bukan tuning threshold.
+**Threshold:**
+- Evidence matching: **0.75** (klaim panjang)
+- Insufficient validation: **0.65** (lebih rendah karena ground_truth lebih ringkas dari span konteks)
+
+**Implikasi:**
+Prompt yang terlalu agresif memberikan escape hatch mendorong model untuk under-answer. Ini tradeoff desain yang perlu dipertimbangkan di setiap RAG system.
+
+---
+
+### Finding 2: Claim Extraction Gagal pada Enumeration List
+
+**Observasi:**
+Jawaban seperti *"The OpenAPI schema includes API paths, parameters, authentication methods, response schemas, and rate limiting."* diekstrak sebagai satu klaim. Item yang tidak didukung konteks ikut lolos bersama item yang valid.
+
+**Fix:**
+`_expand_enumeration()` mendeteksi pola `"X includes A, B, C, and D"` dan memecahnya menjadi klaim atomik. Score berubah dari **1.0 → 0.6** untuk jawaban yang sama setelah fix.
+
+**Implikasi:**
+Granularitas claim extraction menentukan kualitas evaluasi. Evaluator yang mengevaluasi kalimat panjang sebagai satu unit akan banyak menghasilkan false positive.
+
+---
+
+### Finding 3: nomic-embed-text Menganggap Paraphrase sebagai Semantically Berbeda
+
+**Observasi:**
+Dua jawaban berikut dianggap semantically berbeda (similarity: 0.7677):
+- `"By not declaring any default value for the parameter."`
+- `"You can make it required by not providing a default value."`
+
+Maknanya identik.
+
+**Analisis:**
+Ini limitation embedding model, bukan bug framework. nomic-embed-text dioptimalkan untuk document-level similarity, bukan sentence-level equivalence. Kalimat pendek dengan kata kerja berbeda menghasilkan embedding yang cukup berbeda.
+
+**Fix:**
+Threshold consistency diturunkan dari 0.80 ke **0.72** setelah observasi empiris. False positive masih tersisa untuk beberapa pasang paraphrase.
+
+**Implikasi:**
+Semantic similarity tidak cukup untuk mendeteksi semantic equivalence pada kalimat pendek dan padat. ROUGE-L memberikan sinyal komplementer yang penting.
+
+---
+
+### Finding 4: Semantic Similarity Tidak Mendeteksi Factual Inconsistency
+
+**Observasi:**
+`"PUT is used to update data"` vs `"PATCH is the correct HTTP method for partial updates"` — similarity **0.8337**, dianggap konsisten. Padahal PUT ≠ PATCH secara faktual.
+
+**Analisis:**
+Embedding model mendeteksi topik yang sama (HTTP methods untuk update), bukan fakta yang berbeda. Similarity topik ≠ similarity fakta.
+
+**Implikasi:**
+Untuk mendeteksi factual inconsistency, dibutuhkan layer tambahan — entity extraction atau structured fact comparison. Ini area pengembangan selanjutnya.
+
+---
+
+### Finding 5: Jawaban Terlalu Singkat — Blind Spot Evaluator
+
+**Observasi:**
+- clean_008: `'/files/home/johndoe/myfile.txt'` — benar secara faktual, score 0.0
+- clean_009: `'PUT'` — benar secara faktual, score 0.0
+- distractor_004: `':filepath'` — jawaban singkat, tidak evaluable
+
+Claim extractor tidak bisa mengekstrak klaim dari path string atau single-word answers.
+
+**Fix:**
+Ditambahkan short answer path di `FaithfulnessEvaluator.evaluate()`:
+- Jawaban < 5 kata → skip claim extraction
+- Gunakan exact match bertingkat: exact → substring → character similarity
+- Bonus check: apakah jawaban muncul di konteks (context grounding)
+- Penalty 0.5x jika matched ke ground_truth tapi tidak grounded di konteks
+
+**Implikasi:**
+Semantic similarity tidak reliable untuk evaluasi single-token answers seperti HTTP methods atau file paths. Exact match jauh lebih tepat untuk kasus ini.
+
+---
+
+### Finding 6: Mistral Faithful ke Konteks yang Salah
+
+**Observasi:**
+Distractor dataset membuktikan: ketika konteks bilang `skip=5, limit=100`, model menjawab persis itu — meski nilai asli yang benar adalah `skip=0, limit=10`. Model tidak menggunakan training knowledge untuk koreksi.
+
+Penurunan faithfulness 56.7% → 8.3% bukan karena model menjadi tidak faithful. Ini karena model sangat faithful ke konteks yang sudah dimanipulasi.
+
+**Implikasi:**
+RAG system yang well-behaved seharusnya mengikuti konteks yang diberikan. Tapi ini juga berarti: **garbage in, garbage out**. Kualitas retrieval sepenuhnya menentukan kualitas jawaban. Evaluasi retrieval pipeline sama pentingnya dengan evaluasi model.
+
+---
+
+### Finding 7: Mistral vs phi3:mini — Tradeoff Faithfulness vs Speed
+
+**Observasi:**
+Mistral lebih faithful (56.7% vs 46.7%) tapi 2x lebih lambat (463.7s vs 222.9s per case). Kedua model over-trigger INSUFFICIENT_CONTEXT dengan frekuensi yang sama (2 false insufficient masing-masing).
+
+phi3:mini cenderung lebih verbose — clean_007 menghasilkan 7 klaim, semuanya semantically close tapi di bawah threshold. Model mencoba menjawab terlalu lengkap tapi tidak cukup grounded ke konteks.
+
+**Implikasi:**
+Untuk production: Mistral lebih aman untuk faithfulness. Untuk development iteration: phi3:mini 2x lebih cepat dengan tradeoff akurasi 10%. Pilihan model harus mempertimbangkan context ini.
+
+---
+
+### Finding 8: Timeout Tidak Konsisten pada CPU Inference
+
+**Observasi:**
+Dari run pertama, 6 dari 10 cases timeout setelah 600s. Tapi beberapa case berhasil selesai dalam 380-648s di run yang sama. Variabilitas ini tidak bisa diprediksi dari panjang konteks saja.
+
+**Kemungkinan penyebab:** memory pressure saat pertama load, thermal throttling, variasi panjang output yang tidak bisa dikontrol.
+
+**Fix:** Timeout dinaikkan ke 900s. Run kedua berhasil 10/10 tanpa failure.
+
+---
+
+## Limitation yang Diakui
+
+**1. Single embedding model.**
+Semua similarity calculation menggunakan nomic-embed-text. Threshold yang dikalibrasi mungkin perlu disesuaikan untuk embedding model lain.
+
+**2. Dataset kecil.**
+10 clean cases, 5 distractor cases. Threshold dikalibrasi dari observasi dataset kecil — mungkin perlu re-kalibrasi untuk dataset yang lebih besar.
+
+**3. Domain terbatas.**
+Hanya FastAPI documentation. Behavior model pada domain teknis lain belum diverifikasi.
+
+**4. ROUGE-L sensitivity.**
+Sangat sensitif terhadap stopwords dan urutan kata. Jawaban semantically identik dengan struktur berbeda akan mendapat ROUGE-L rendah.
+
+**5. Short answer exact match belum divalidasi di semua edge cases.**
+Implementasi baru — perlu lebih banyak data untuk mengkonfirmasi threshold yang tepat.
+
+---
+
+## Thresholds yang Dikalibrasi
+
+| Threshold | Nilai | Tujuan |
+|-----------|-------|--------|
+| Faithfulness evidence matching | 0.75 | Klaim harus kuat match ke span konteks |
+| Insufficient context validation | 0.65 | Ground truth lebih ringkas dari span konteks |
+| Consistency semantic | 0.72 | Balance deteksi inkonsistensi vs variasi paraphrase |
+| Consistency ROUGE-L | 0.40 | Paraphrase alami punya word overlap rendah |
+| Robustness sensitivity | 0.85 | Perturbasi kecil tidak boleh ubah jawaban |
+| Short answer char similarity | 0.85 | Fallback untuk jawaban yang hampir exact match |
+
+---
+
+## Kesimpulan
+
+Framework ini tidak mengklaim bisa menilai "kualitas" jawaban LLM secara umum. Yang dilakukan lebih spesifik:
+
+1. **Klaim dalam jawaban dapat di-trace ke dokumen sumber** — atau tidak.
+2. **Jawaban stabil terhadap variasi formulasi pertanyaan** — atau tidak.
+3. **Model bergantung pada konteks yang diberikan** — atau menjawab dari training memory.
+4. **Jawaban tidak berubah karena perturbasi kecil pada prompt** — atau tidak robust.
+
+Setiap keputusan dalam framework dapat dijelaskan secara logis. Setiap failure case dicatat, bukan disembunyikan. Setiap limitation diakui, bukan dihindari.
+
+Ini bukan framework yang sempurna. Tapi ini framework yang jujur.
