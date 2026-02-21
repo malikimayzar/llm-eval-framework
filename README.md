@@ -1,3 +1,5 @@
+![Tests](https://github.com/malikimayzar/llm-eval-framework/actions/workflows/test.yml/badge.svg)
+
 # LLM Evaluation Framework
 ### Faithfulness & Consistency Evaluation for Document-Grounded QA
 
