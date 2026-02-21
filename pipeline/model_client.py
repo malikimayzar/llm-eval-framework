@@ -67,7 +67,7 @@ class OllamaClient:
         base_url: str = "http://localhost:11434",
         temperature: float = 0.0,
         max_tokens: int = 512,
-        timeout_seconds: int = 600,
+        timeout_seconds: int = 900,
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")

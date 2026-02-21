@@ -420,7 +420,7 @@ class TestConstants:
     def test_threshold_values(self):
         assert DEFAULT_SIMILARITY_THRESHOLD == 0.75
         assert INSUFFICIENT_VALIDATION_THRESHOLD == 0.65
-        
+
 # Integration-style test
 class TestIntegration:
     def test_full_pipeline_mock(self, sample_case, mock_embedder):
@@ -429,18 +429,17 @@ class TestIntegration:
         evaluator.embedding_model = "mock"
         evaluator.extractor = ClaimExtractor()
         evaluator.embedder = mock_embedder
-
+        
         from evaluators.faithfulness import EvidenceMatcher
         evaluator.matcher = EvidenceMatcher(
             embedder=mock_embedder,
             similarity_threshold=0.75,
         )
-
+        
         answer = (
-            "Query parameters declared with Python types are converted to that type "
+            "Query parameters declared with Python types are converted to that type"
             "and validated against it."
         )
-
         result = evaluator.evaluate(
             case=sample_case,
             model_answer=answer,
