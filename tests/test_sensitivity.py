@@ -1,28 +1,14 @@
-"""
-test_sensitivity.py
--------------------
-Unit tests untuk SensitivityEvaluator.
-
-Semua test menggunakan mock OllamaEmbedder — tidak butuh Ollama.
-
-Jalankan:
-    pytest tests/test_sensitivity.py -v
-"""
-
 import sys
 import os
 import pytest
 import numpy as np
 from unittest.mock import MagicMock
-from dataclasses import asdict
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from evaluators.sensitivity import (
     SensitivityEvaluator,
     SensitivityResult,
-    SensitivityComparison,
-    PerturbedVariant,
     perturb_typo,
     perturb_lowercase,
     perturb_context_noise,
@@ -35,11 +21,7 @@ from evaluators.sensitivity import (
 )
 from evaluators.faithfulness import OllamaEmbedder
 
-
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
-
 @pytest.fixture
 def mock_embedder():
     embedder = MagicMock(spec=OllamaEmbedder)
@@ -58,7 +40,6 @@ def mock_embedder():
 
 @pytest.fixture
 def identical_embedder():
-    """Embedder yang mengembalikan vektor identik — similarity = 1.0."""
     embedder = MagicMock(spec=OllamaEmbedder)
 
     def same_embed(text):
@@ -75,7 +56,6 @@ def identical_embedder():
 
 @pytest.fixture
 def divergent_embedder():
-    """Embedder yang mengembalikan vektor berbeda — similarity rendah."""
     embedder = MagicMock(spec=OllamaEmbedder)
     call_count = [0]
 
@@ -90,7 +70,6 @@ def divergent_embedder():
     embedder.health_check.return_value = True
     embedder.model = "mock-divergent"
     return embedder
-
 
 @pytest.fixture
 def evaluator(mock_embedder):
@@ -111,11 +90,9 @@ def evaluator(mock_embedder):
 def sample_question():
     return "What does FastAPI use for data validation?"
 
-
 @pytest.fixture
 def sample_context():
     return "FastAPI uses Pydantic for data validation and supports async operations."
-
 
 @pytest.fixture
 def sample_perturbed_variants(sample_question, sample_context):
@@ -134,19 +111,11 @@ def sample_perturbed_variants(sample_question, sample_context):
         },
     ]
 
-
-# ---------------------------------------------------------------------------
 # Test: Perturbation functions
-# ---------------------------------------------------------------------------
-
 class TestPerturbationFunctions:
-
     def test_typo_changes_one_character(self, sample_question):
-        """Typo harus mengubah tepat satu karakter."""
         perturbed = perturb_typo(sample_question)
-        # Panjang harus sama
         assert len(perturbed) == len(sample_question)
-        # Harus ada tepat satu perbedaan
         diffs = sum(1 for a, b in zip(sample_question, perturbed) if a != b)
         assert diffs == 1
 
@@ -177,30 +146,21 @@ class TestPerturbationFunctions:
         assert perturbed != sample_question
 
     def test_question_reorder_preserves_core(self, sample_question):
-        """Core kata kunci harus masih ada setelah reorder."""
         perturbed = perturb_question_reorder(sample_question)
-        # Kata kunci utama harus masih ada
         assert "FastAPI" in perturbed or "fastapi" in perturbed.lower()
 
     def test_typo_short_question(self):
-        """Typo pada pertanyaan sangat pendek tidak crash."""
         result = perturb_typo("Hi?")
         assert isinstance(result, str)
 
     def test_reorder_fallback(self):
-        """Pertanyaan tanpa prefix yang dikenal harus pakai fallback."""
         q = "Does FastAPI support async operations?"
         result = perturb_question_reorder(q)
         assert isinstance(result, str)
         assert len(result) > 0
 
-
-# ---------------------------------------------------------------------------
 # Test: apply_perturbation
-# ---------------------------------------------------------------------------
-
 class TestApplyPerturbation:
-
     def test_typo_affects_question(self, evaluator, sample_question, sample_context):
         pq, pc = evaluator.apply_perturbation(sample_question, sample_context, PERTURBATION_TYPO)
         assert pq != sample_question
@@ -227,13 +187,8 @@ class TestApplyPerturbation:
         assert pq == sample_question
         assert pc == sample_context
 
-
-# ---------------------------------------------------------------------------
 # Test: evaluate_from_answers
-# ---------------------------------------------------------------------------
-
 class TestEvaluateFromAnswers:
-
     def test_returns_sensitivity_result(self, evaluator, sample_question,
                                         sample_context, sample_perturbed_variants):
         result = evaluator.evaluate_from_answers(
@@ -335,16 +290,15 @@ class TestEvaluateFromAnswers:
         assert len(result.sensitive_perturbations) >= 1
 
     def test_empty_perturbed_answer_filtered(self, evaluator, sample_question, sample_context):
-        """Variant dengan jawaban kosong harus difilter."""
         variants = [
             {"perturbation_type": PERTURBATION_TYPO,
              "perturbed_question": perturb_typo(sample_question),
              "perturbed_context": sample_context,
-             "answer": ""},  # kosong
+             "answer": ""}, 
             {"perturbation_type": PERTURBATION_LOWERCASE,
              "perturbed_question": perturb_lowercase(sample_question),
              "perturbed_context": sample_context,
-             "answer": "   "},  # whitespace
+             "answer": "   "},  
         ]
         result = evaluator.evaluate_from_answers(
             case_id="test", original_question=sample_question,
@@ -402,13 +356,8 @@ class TestEvaluateFromAnswers:
                 assert "semantic_similarity" in sp
                 assert "diagnosis" in sp
 
-
-# ---------------------------------------------------------------------------
 # Test: diagnosis messages
-# ---------------------------------------------------------------------------
-
 class TestDiagnosis:
-
     def test_robust_diagnosis(self, evaluator):
         diagnosis = evaluator._diagnose(PERTURBATION_TYPO, 0.95, 0.80, True)
         assert "robust" in diagnosis.lower()
@@ -428,13 +377,8 @@ class TestDiagnosis:
             assert isinstance(diagnosis, str)
             assert len(diagnosis) > 10
 
-
-# ---------------------------------------------------------------------------
 # Test: save_results
-# ---------------------------------------------------------------------------
-
 class TestSaveResults:
-
     def test_save_and_reload(self, evaluator, sample_question, sample_context,
                               sample_perturbed_variants, tmp_path):
         import json
@@ -459,19 +403,12 @@ class TestSaveResults:
         assert "has_failure" in loaded[0]
         assert "sensitive_perturbations" in loaded[0]
 
-
-# ---------------------------------------------------------------------------
 # Test: constants
-# ---------------------------------------------------------------------------
-
 class TestConstants:
-
     def test_robustness_threshold_range(self):
         assert 0.5 <= DEFAULT_ROBUSTNESS_THRESHOLD <= 1.0
 
     def test_robustness_threshold_higher_than_consistency(self):
-        """Robustness threshold harus lebih tinggi dari consistency threshold
-        karena perturbasi sensitivity lebih kecil dari paraphrase."""
         from evaluators.consistency import DEFAULT_SEMANTIC_THRESHOLD
         assert DEFAULT_ROBUSTNESS_THRESHOLD >= DEFAULT_SEMANTIC_THRESHOLD
 
@@ -482,7 +419,6 @@ class TestConstants:
         assert PERTURBATION_REORDER == "question_reorder"
 
     def test_evaluator_has_all_perturbations(self):
-        """SensitivityEvaluator harus mendukung semua perturbation types."""
         assert PERTURBATION_TYPO in SensitivityEvaluator.PERTURBATIONS
         assert PERTURBATION_LOWERCASE in SensitivityEvaluator.PERTURBATIONS
         assert PERTURBATION_NOISE in SensitivityEvaluator.PERTURBATIONS

@@ -2,7 +2,7 @@ import sys
 import os
 import pytest
 import numpy as np
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from dataclasses import asdict
 
 # Path setup
@@ -202,8 +202,6 @@ class TestEvidenceMatcher:
         assert hasattr(match, "classification")
         assert hasattr(match, "threshold_used")
         assert match.threshold_used == 0.75
-
-
 
 # Test: FaithfulnessEvaluator
 class TestFaithfulnessEvaluator:
@@ -406,8 +404,6 @@ class TestDiagnosis:
         evaluator.similarity_threshold = 0.75
         diagnosis = evaluator._diagnose_failure(match)
         assert "hallucination" in diagnosis.lower() or "no relevant" in diagnosis.lower()
-
-
 
 # Test: Constants
 class TestConstants:

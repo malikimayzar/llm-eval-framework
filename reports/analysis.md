@@ -246,3 +246,29 @@ Ini adalah behavior yang diharapkan dari RAG system yang well-behaved. Tapi juga
 | False INSUFFICIENT_CTX | 2 | 0 |
 
 Penurunan 56.7% → 8.3% mengkonfirmasi bahwa evaluator sensitif terhadap manipulasi konteks — bukan hanya mengukur topical similarity.
+---
+
+## Model Comparison — Mistral vs phi3:mini (Clean Dataset)
+
+| Metrik | Mistral | phi3:mini |
+|--------|---------|-----------|
+| Avg faithfulness | 56.7% | 46.7% |
+| Perfect score (1.0) | 5/10 | 4/10 |
+| Failure rate | 50% | 60% |
+| False INSUFFICIENT_CTX | 2 | 2 |
+| Avg latency per case | 463.7s | 222.9s |
+| Total eval time | 160 min | 77.7 min |
+
+### Observasi
+
+**Mistral lebih faithful, phi3:mini lebih cepat.**
+Mistral menghasilkan faithfulness 10% lebih tinggi (56.7% vs 46.7%) dengan failure rate lebih rendah (50% vs 60%). Tapi phi3:mini 2x lebih cepat per case — tradeoff yang relevan untuk development iteration.
+
+**Kedua model sama-sama over-trigger INSUFFICIENT_CONTEXT.**
+Dua false insufficient context terdeteksi di kedua model. Ini bukan kebetulan — prompt yang memberikan escape hatch terlalu agresif mendorong model untuk under-answer, terlepas dari ukuran model.
+
+**phi3:mini lebih verbose tapi kurang presisi.**
+clean_007 menunjukkan phi3:mini menghasilkan 7 klaim dari satu jawaban — semuanya semantically close tapi di bawah threshold. Model mencoba menjawab terlalu lengkap, tapi tidak cukup grounded ke konteks.
+
+**clean_008 dan clean_009 tetap blind spot di kedua model.**
+Jawaban singkat ('PUT', '/files/...') tidak bisa dievaluasi faithfulness di model manapun. Ini mengkonfirmasi bahwa exact match adalah solusi yang dibutuhkan, bukan tuning threshold.

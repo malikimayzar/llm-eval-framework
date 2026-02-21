@@ -198,7 +198,6 @@ class TestQuery:
 
 # Test: QueryOutput dataclass
 class TestQueryOutput:
-
     def test_queryoutput_serializable(self, client, mock_successful_response):
         with patch("requests.post", return_value=mock_successful_response):
             result = client.query("context", "question", case_id="t1")
