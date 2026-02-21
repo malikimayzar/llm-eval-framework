@@ -62,3 +62,39 @@ Timeout dinaikkan ke 900s untuk run kedua. Jika masih ada timeout, evaluasi perl
 **clean_006** adalah satu-satunya genuine hallucination yang tertangkap: model menambahkan *"Documentation of the max_length parameter in the OpenAPI schema"* yang tidak ada di konteks. Framework berhasil mendeteksi ini dengan score 0.667.
 
 **clean_008 dan clean_009** mengekspos blind spot evaluator: jawaban factually correct tapi tidak evaluable karena terlalu singkat. Exact match terhadap ground_truth adalah solusi yang tepat untuk kasus ini.
+
+---
+
+## Hasil Eval Lengkap — Mistral, Distractor Dataset
+
+**Run ID:** 20260221_103528
+**Total waktu:** 120 menit
+
+| Case | Score | Jawaban Model | Keterangan |
+|------|-------|---------------|-----------|
+| distractor_001 | 0.0 | skip=5, limit=100 | Mengikuti nilai yang dimanipulasi |
+| distractor_002 | 0.0 | POST | Mengikuti HTTP method yang dibalik |
+| distractor_003 | N/A | (kosong) | Inference failed |
+| distractor_004 | 0.0 | :filepath | Jawaban terlalu singkat |
+| distractor_005 | 0.333 | 3 poin, 1 hallucination | Tambah "caching" yang tidak ada di konteks |
+
+**Avg faithfulness: 8.3% — turun dari 56.7% di clean dataset**
+
+### Temuan Utama
+
+**Mistral faithful ke konteks, termasuk konteks yang salah.**
+
+distractor_001 dan distractor_002 membuktikan ini: model tidak menggunakan training knowledge untuk "koreksi" konteks yang dimanipulasi. Ketika konteks bilang `skip=5, limit=100`, model menjawab persis itu — meski nilai asli yang benar adalah `skip=0, limit=10`.
+
+Ini adalah behavior yang diharapkan dari RAG system yang well-behaved. Tapi juga berarti: **garbage in, garbage out**. Kualitas retrieval menentukan kualitas jawaban.
+
+### Perbandingan Clean vs Distractor
+
+| Metrik | Clean Dataset | Distractor Dataset |
+|--------|--------------|-------------------|
+| Avg faithfulness | 56.7% | 8.3% |
+| Perfect score | 5/10 | 0/5 |
+| Failure rate | 50% | 100% |
+| False INSUFFICIENT_CTX | 2 | 0 |
+
+Penurunan 56.7% → 8.3% mengkonfirmasi bahwa evaluator sensitif terhadap manipulasi konteks — bukan hanya mengukur topical similarity.
