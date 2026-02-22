@@ -1,0 +1,40 @@
+# config.yaml — LLM Evaluation Framework
+# Semua threshold dan parameter ada di sini.
+# Ubah nilai di sini tanpa perlu menyentuh source code.
+
+thresholds:
+  faithfulness_evidence: 0.75         # Min similarity claim-to-evidence
+  insufficient_ctx_validation: 0.65   # Lebih rendah karena ground_truth lebih ringkas
+  consistency_semantic: 0.72
+  consistency_rouge_l: 0.40
+  robustness_sensitivity: 0.85
+  short_answer_max_words: 5           # Jawaban di bawah ini → exact match path
+  short_answer_char_sim: 0.85         # Min char similarity untuk short answer match
+
+models:
+  default_eval: "mistral"
+  default_dev: "phi3:mini"
+  embedding: "nomic-embed-text"
+
+inference:
+  timeout_seconds: 900
+  max_retries: 3
+  retry_backoff_base: 2               # Exponential backoff: 2^attempt detik (1s, 2s, 4s)
+
+pipeline:
+  checkpoint_dir: "logs/checkpoints"
+  results_dir: "reports/results"
+
+dataset:
+  base_dir: "data/dataset"
+
+# Technical terms yang semantically similar tapi factually berbeda.
+# Jika claim dan evidence menggunakan term berbeda dari grup yang sama → score di-override ke 0.0
+# Tambah grup baru sesuai kebutuhan domain.
+technical_term_groups:
+  - ["put", "patch", "post", "get", "delete", "head", "options"]   # HTTP methods
+  - ["200", "201", "204", "400", "401", "403", "404", "422", "500"] # HTTP status codes
+  - ["sync", "async", "await"]                                       # Concurrency model
+  - ["required", "optional"]                                         # Parameter types
+  - ["true", "false"]                                                # Boolean values
+  - ["json", "xml", "yaml", "toml"]                                  # Data formats

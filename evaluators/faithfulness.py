@@ -1,3 +1,20 @@
+"""
+evaluators/faithfulness.py
+──────────────────────────
+Faithfulness evaluator v1.2.0
+
+Changelog dari v1.1.0:
+- [FIX] Short answer path (_evaluate_short_answer) sekarang terhubung ke evaluate()
+  Sebelumnya: method ada tapi tidak pernah dipanggil → clean_008, clean_009 selalu
+  masuk claim extraction path dan dapat score 0 (blind spot terkonfirmasi)
+- [NEW] Technical conflict detection (_has_technical_conflict)
+  PUT vs PATCH similarity = 0.8337 tapi factually berbeda → sekarang di-override ke 0.0
+  Konfigurasi via config.yaml: technical_term_groups
+- [NEW] Config-driven thresholds via pipeline.config_loader
+  Tidak ada lagi magic numbers tersebar di source code
+- [FIX] Removed duplicate INSUFFICIENT_VALIDATION_THRESHOLD assignment (typo di v1.1.0)
+"""
+
 import re
 from difflib import SequenceMatcher
 import json
@@ -8,6 +25,7 @@ from datetime import datetime, timezone
 import numpy as np
 import requests
 
+from pipeline.config_loader import config
 
 # ---------------------------------------------------------------------------
 # Short answer helpers
@@ -27,25 +45,35 @@ def _char_similarity(a: str, b: str) -> float:
 
 
 def _is_short_answer(answer: str) -> bool:
-    """Cek apakah jawaban termasuk kategori singkat."""
-    return len(answer.strip().split()) < SHORT_ANSWER_WORD_THRESHOLD
+    """Cek apakah jawaban termasuk kategori singkat (di bawah threshold dari config)."""
+    threshold = config["thresholds"]["short_answer_max_words"]
+    return len(answer.strip().split()) < threshold
 
 
 logger = logging.getLogger("faithfulness")
 
-# Konstanta
-DEFAULT_SIMILARITY_THRESHOLD = 0.75
-INSUFFICIENT_VALIDATION_THRESHOLD = 0.65
-INSUFFICIENT_VALIDATION_THRESHOLD = 0.65
-MIN_CLAIM_LENGTH_WORDS = 2
-SHORT_ANSWER_WORD_THRESHOLD = 5
-SHORT_ANSWER_CHAR_SIM_THRESHOLD = 0.85
-INSUFFICIENT_CONTEXT_SIGNAL = "INSUFFICIENT_CONTEXT"
-OLLAMA_BASE_URL = "http://localhost:11434"
-EMBEDDING_MODEL = "nomic-embed-text"
+# ---------------------------------------------------------------------------
+# Konstanta — nilai default, akan di-override oleh config jika tersedia
+# ---------------------------------------------------------------------------
+DEFAULT_SIMILARITY_THRESHOLD    = config["thresholds"]["faithfulness_evidence"]
+INSUFFICIENT_VALIDATION_THRESHOLD = config["thresholds"]["insufficient_ctx_validation"]
+MIN_CLAIM_LENGTH_WORDS          = 2
+SHORT_ANSWER_WORD_THRESHOLD     = config["thresholds"]["short_answer_max_words"]
+SHORT_ANSWER_CHAR_SIM_THRESHOLD = config["thresholds"]["short_answer_char_sim"]
+INSUFFICIENT_CONTEXT_SIGNAL     = "INSUFFICIENT_CONTEXT"
+OLLAMA_BASE_URL                 = "http://localhost:11434"
+EMBEDDING_MODEL                 = config["models"]["embedding"]
+
+# Technical term groups dari config — untuk conflict detection
+_TECHNICAL_TERM_GROUPS = [
+    set(group) for group in config.get("technical_term_groups", [])
+]
 
 
+# ---------------------------------------------------------------------------
 # Data classes
+# ---------------------------------------------------------------------------
+
 @dataclass
 class Claim:
     claim_id: str
@@ -59,8 +87,9 @@ class EvidenceMatch:
     claim_text: str
     best_evidence_span: str
     similarity_score: float
-    classification: str       
+    classification: str
     threshold_used: float
+    technical_conflict: bool = False   # [NEW] flag jika conflict terdeteksi
 
 
 @dataclass
@@ -91,7 +120,10 @@ class FaithfulnessResult:
     evaluation_path: str = "claim_extraction"
 
 
+# ---------------------------------------------------------------------------
 # Ollama Embedder
+# ---------------------------------------------------------------------------
+
 class OllamaEmbedder:
     def __init__(
         self,
@@ -132,7 +164,10 @@ class OllamaEmbedder:
             return False
 
 
+# ---------------------------------------------------------------------------
 # Claim Extractor
+# ---------------------------------------------------------------------------
+
 class ClaimExtractor:
     def extract(self, answer: str, case_id: str) -> list:
         if not answer or not answer.strip():
@@ -169,9 +204,7 @@ class ClaimExtractor:
     def _split_into_sentences(self, text: str) -> list:
         text = re.sub(r'\n\s*[-•*]\s+', '\n', text)
         text = re.sub(r'\n\s*\d+\.\s+', '\n', text)
-
         sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
-
         result = []
         for s in sentences:
             parts = [p.strip() for p in s.split('\n') if p.strip()]
@@ -194,11 +227,8 @@ class ClaimExtractor:
             if not match:
                 continue
 
-            prefix = match.group(1).strip()         
-            items_str = match.group(3).strip()       
-
-            items_str = items_str.rstrip('.')
-
+            prefix = match.group(1).strip()
+            items_str = match.group(3).strip().rstrip('.')
             raw_items = [i.strip() for i in items_str.split(',')]
             cleaned_items = []
             for item in raw_items:
@@ -209,11 +239,7 @@ class ClaimExtractor:
             if len(cleaned_items) < 2:
                 return []
 
-            expanded = []
-            for item in cleaned_items:
-                claim_text = f"{prefix} {item}."
-                expanded.append(claim_text)
-
+            expanded = [f"{prefix} {item}." for item in cleaned_items]
             logger.debug(
                 f"Expanded enumeration into {len(expanded)} claims: "
                 f"{[c[:50] for c in expanded]}"
@@ -235,7 +261,10 @@ class ClaimExtractor:
         return any(re.match(p, s) for p in filler_patterns)
 
 
-# Evidence Matcher
+# ---------------------------------------------------------------------------
+# Evidence Matcher — dengan technical conflict detection
+# ---------------------------------------------------------------------------
+
 class EvidenceMatcher:
     def __init__(
         self,
@@ -267,14 +296,28 @@ class EvidenceMatcher:
             f"via {self.embedder.model}..."
         )
         claim_embs = self.embedder.embed_batch([c.text for c in claims])
-        span_embs = self.embedder.embed_batch(context_spans)
-
+        span_embs  = self.embedder.embed_batch(context_spans)
         sim_matrix = self._cosine_similarity(claim_embs, span_embs)
 
         results = []
         for i, claim in enumerate(claims):
-            scores = sim_matrix[i]
-            best_idx = int(np.argmax(scores))
+            scores = sim_matrix[i].copy()
+
+            # ── [NEW] TECHNICAL CONFLICT CHECK ──────────────────────────────
+            # Sebelum pilih best span, nol-kan span yang conflicting.
+            # Ini mencegah PUT vs PATCH (similarity 0.83) dianggap SUPPORTED.
+            conflict_detected = False
+            for j, span in enumerate(context_spans):
+                if _has_technical_conflict(claim.text, span):
+                    logger.debug(
+                        f"Technical conflict | claim='{claim.text[:50]}' "
+                        f"span='{span[:50]}' | score zeroed from {scores[j]:.4f}"
+                    )
+                    scores[j] = 0.0
+                    conflict_detected = True
+            # ────────────────────────────────────────────────────────────────
+
+            best_idx   = int(np.argmax(scores))
             best_score = float(scores[best_idx])
             classification = "SUPPORTED" if best_score >= self.similarity_threshold else "UNSUPPORTED"
 
@@ -285,11 +328,12 @@ class EvidenceMatcher:
                 similarity_score=round(best_score, 4),
                 classification=classification,
                 threshold_used=self.similarity_threshold,
+                technical_conflict=conflict_detected,
             ))
 
             logger.debug(
                 f"{claim.claim_id} | {classification} | "
-                f"score={best_score:.4f}"
+                f"score={best_score:.4f} | conflict={conflict_detected}"
             )
 
         return results
@@ -304,9 +348,49 @@ class EvidenceMatcher:
         return np.dot(a_norm, b_norm.T)
 
 
-# Faithfulness Evaluator 
+# ---------------------------------------------------------------------------
+# [NEW] Technical conflict detection — module-level function
+# ---------------------------------------------------------------------------
+
+def _has_technical_conflict(claim: str, evidence: str) -> bool:
+    """
+    Return True jika claim dan evidence menggunakan technical term yang berbeda
+    dari grup yang sama.
+
+    Contoh yang benar di-catch:
+        claim="use PUT method" + evidence="use PATCH method"
+        → group HTTP methods → claim_terms={'put'}, evidence_terms={'patch'} → conflict
+
+    Contoh yang tidak di-catch (intentional):
+        claim="POST or PUT" + evidence="POST or PUT" → terms sama → no conflict
+        claim="send a request" + evidence="use POST" → claim tidak punya HTTP term → no conflict
+
+    Config: technical_term_groups di config.yaml
+    """
+    claim_lower    = set(re.findall(r'\b\w+\b', claim.lower()))
+    evidence_lower = set(re.findall(r'\b\w+\b', evidence.lower()))
+
+    for term_group in _TECHNICAL_TERM_GROUPS:
+        claim_hits    = claim_lower & term_group
+        evidence_hits = evidence_lower & term_group
+
+        # Conflict: keduanya punya term dari grup yang sama, tapi term-nya berbeda
+        if claim_hits and evidence_hits and claim_hits != evidence_hits:
+            logger.debug(
+                f"Technical conflict detected | "
+                f"claim_terms={claim_hits} vs evidence_terms={evidence_hits}"
+            )
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Faithfulness Evaluator
+# ---------------------------------------------------------------------------
+
 class FaithfulnessEvaluator:
-    VERSION = "1.1.0" 
+    VERSION = "1.2.1"
+
     def __init__(
         self,
         similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
@@ -316,8 +400,8 @@ class FaithfulnessEvaluator:
         self.similarity_threshold = similarity_threshold
         self.embedding_model = embedding_model
         self.extractor = ClaimExtractor()
-        self.embedder = OllamaEmbedder(model=embedding_model, base_url=ollama_base_url)
-        self.matcher = EvidenceMatcher(
+        self.embedder  = OllamaEmbedder(model=embedding_model, base_url=ollama_base_url)
+        self.matcher   = EvidenceMatcher(
             embedder=self.embedder,
             similarity_threshold=similarity_threshold,
         )
@@ -331,13 +415,26 @@ class FaithfulnessEvaluator:
     def health_check(self) -> bool:
         return self.embedder.health_check()
 
+    # ── [FIX] Short answer path — sekarang benar-benar dipanggil dari evaluate() ──
+
     def _evaluate_short_answer(
         self,
         case: dict,
         answer: str,
         model_name: str,
     ) -> "FaithfulnessResult":
-        """Path alternatif untuk jawaban singkat (< SHORT_ANSWER_WORD_THRESHOLD kata)."""
+        """
+        Path alternatif untuk jawaban singkat (< SHORT_ANSWER_WORD_THRESHOLD kata).
+
+        v1.1.0: Method ini ada tapi tidak pernah dipanggil dari evaluate() — blind spot.
+        v1.2.0: [FIXED] Sekarang dipanggil di awal evaluate() sebelum claim extraction.
+
+        Logika scoring:
+            1. Exact match vs ground_truth          → score 1.0
+            2. Substring match (satu ada di lain)   → score 0.9
+            3. Char similarity >= threshold          → score = char_sim
+            4. Tidak ada match + tidak grounded      → score = char_sim * 0.5
+        """
         case_id      = case["id"]
         context      = case["context"]
         question     = case["question"]
@@ -370,7 +467,7 @@ class FaithfulnessEvaluator:
 
         diagnosis = (
             f"Short answer ({len(answer.split())} words). "
-            f"Match: {match_type}. Grounded: {grounded}. Score: {score}."
+            f"Match: {match_type}. Grounded in context: {grounded}. Score: {score}."
         )
 
         failure_cases = []
@@ -378,7 +475,9 @@ class FaithfulnessEvaluator:
             failure_cases.append({
                 "claim_id": f"{case_id}_short_answer",
                 "unsupported_claim": answer,
+                "best_match_in_context": ground_truth,
                 "similarity_score": base_score,
+                "threshold": SHORT_ANSWER_CHAR_SIM_THRESHOLD,
                 "diagnosis": diagnosis,
             })
 
@@ -392,9 +491,11 @@ class FaithfulnessEvaluator:
             case_id=case_id,
             model=model_name,
             question=question,
-            model_answer=answer,
-            context_length_chars=len(context),
+            answer=answer,
+            context_preview=context[:200] + "..." if len(context) > 200 else context,
             total_claims=1,
+            claims=[],
+            evidence_matches=[],
             supported_count=1 if matched else 0,
             unsupported_count=0 if matched else 1,
             skipped_count=0,
@@ -415,21 +516,31 @@ class FaithfulnessEvaluator:
         model_answer: str,
         model_name: str = "unknown",
     ) -> FaithfulnessResult:
-        case_id = case["id"]
-        context = case["context"]
+        case_id  = case["id"]
+        context  = case["context"]
         question = case["question"]
 
         logger.info(f"Evaluating | case_id={case_id}")
 
+        # ── BRANCH 1: EMPTY ANSWER ────────────────────────────────────────────
+        # Harus dicek pertama — string kosong lolos ke short_answer path dan
+        # substring match dengan ground_truth → score 0.9 (false positive).
+        if not model_answer or not model_answer.strip():
+            return self._build_empty_result(case_id, model_name, question, model_answer, context)
+        # ─────────────────────────────────────────────────────────────────────
+
+        # ── BRANCH 2: INSUFFICIENT CONTEXT SIGNAL ────────────────────────────
+        # Harus dicek sebelum short_answer — "INSUFFICIENT_CONTEXT" adalah
+        # 1 kata sehingga akan masuk short_answer path jika tidak dicek duluan.
         if INSUFFICIENT_CONTEXT_SIGNAL in model_answer.upper():
             logger.info(f"Model returned INSUFFICIENT_CONTEXT | case_id={case_id}")
             ground_truth = case.get("ground_truth") or case.get("ground_truth_from_context")
             if ground_truth:
-                gt_embedding = self.embedder.embed(ground_truth)
-                context_spans = self.matcher._split_context(context)
+                gt_embedding   = self.embedder.embed(ground_truth)
+                context_spans  = self.matcher._split_context(context)
                 if context_spans:
                     span_embeddings = self.embedder.embed_batch(context_spans)
-                    sims = self.matcher._cosine_similarity(
+                    sims    = self.matcher._cosine_similarity(
                         gt_embedding.reshape(1, -1), span_embeddings
                     )[0]
                     max_sim = float(sims.max())
@@ -441,7 +552,7 @@ class FaithfulnessEvaluator:
                     if max_sim >= INSUFFICIENT_VALIDATION_THRESHOLD:
                         logger.warning(
                             f"FALSE INSUFFICIENT_CONTEXT detected | case_id={case_id} | "
-                            f"Evidence exists in context (sim={max_sim:.4f}) but model claimed insufficient."
+                            f"Evidence exists (sim={max_sim:.4f}) but model claimed insufficient."
                         )
                         return self._build_false_insufficient_result(
                             case_id, model_name, question, model_answer,
@@ -451,26 +562,36 @@ class FaithfulnessEvaluator:
             return self._build_insufficient_result(
                 case_id, model_name, question, model_answer, context
             )
+        # ─────────────────────────────────────────────────────────────────────
 
-        # Claim Extraction
+        # ── BRANCH 3: SHORT ANSWER PATH ───────────────────────────────────────
+        # Dicek setelah INSUFFICIENT_CONTEXT agar signal keyword tidak salah path.
+        # clean_008 ('PUT') dan clean_009 ('/files/...') masuk sini.
+        if _is_short_answer(model_answer):
+            logger.info(
+                f"Short answer detected ({len(model_answer.split())} words) | "
+                f"case_id={case_id} → short_answer path"
+            )
+            return self._evaluate_short_answer(case, model_answer, model_name)
+        # ─────────────────────────────────────────────────────────────────────
+
+        # ── BRANCH 4 (NORMAL): Claim Extraction → Evidence Matching ──────────
         claims = self.extractor.extract(answer=model_answer, case_id=case_id)
         if not claims:
             return self._build_empty_result(
                 case_id, model_name, question, model_answer, context
             )
 
-        # evidence matching
+        # Evidence matching (sekarang include technical conflict detection di dalam matcher)
         evidence_matches = self.matcher.match(claims=claims, context=context)
 
-        # scoring
-        supported = [m for m in evidence_matches if m.classification == "SUPPORTED"]
+        supported   = [m for m in evidence_matches if m.classification == "SUPPORTED"]
         unsupported = [m for m in evidence_matches if m.classification == "UNSUPPORTED"]
-        skipped = [m for m in evidence_matches if m.classification == "SKIPPED"]
+        skipped     = [m for m in evidence_matches if m.classification == "SKIPPED"]
 
         evaluable = len(claims) - len(skipped)
-        score = len(supported) / evaluable if evaluable > 0 else 0.0
+        score     = len(supported) / evaluable if evaluable > 0 else 0.0
 
-        # failure case documentation
         failure_cases = [
             {
                 "claim_id": m.claim_id,
@@ -478,6 +599,7 @@ class FaithfulnessEvaluator:
                 "best_match_in_context": m.best_evidence_span,
                 "similarity_score": m.similarity_score,
                 "threshold": m.threshold_used,
+                "technical_conflict": m.technical_conflict,
                 "diagnosis": self._diagnose_failure(m),
             }
             for m in unsupported
@@ -538,9 +660,12 @@ class FaithfulnessEvaluator:
             print("Tidak ada hasil.")
             return
 
-        scores = [r.faithfulness_score for r in results]
-        avg = sum(scores) / total
-        failed = [r for r in results if r.has_failure]
+        scores  = [r.faithfulness_score for r in results]
+        avg     = sum(scores) / total
+        failed  = [r for r in results if r.has_failure]
+        by_path = {}
+        for r in results:
+            by_path[r.evaluation_path] = by_path.get(r.evaluation_path, 0) + 1
 
         print("\n" + "=" * 60)
         print("FAITHFULNESS EVALUATION SUMMARY")
@@ -551,6 +676,7 @@ class FaithfulnessEvaluator:
         print(f"Cases with failure: {len(failed)}")
         print(f"Threshold         : {results[0].similarity_threshold}")
         print(f"Embedding model   : {results[0].embedding_model}")
+        print(f"Evaluation paths  : {by_path}")
 
         if failed:
             print("\nFAILURE CASES:")
@@ -558,18 +684,28 @@ class FaithfulnessEvaluator:
             for r in failed:
                 print(f"\n  case_id : {r.case_id}")
                 print(f"  score   : {r.faithfulness_score}")
+                print(f"  path    : {r.evaluation_path}")
                 print(f"  question: {r.question[:80]}")
                 for fc in r.failure_cases:
                     print(f"\n  Unsupported claim:")
                     print(f"     {fc['unsupported_claim'][:100]}")
                     print(f"  Best match (score={fc['similarity_score']}):")
-                    print(f"     {fc['best_match_in_context'][:100]}")
+                    print(f"     {fc.get('best_match_in_context', '')[:100]}")
+                    if fc.get("technical_conflict"):
+                        print(f"  ⚠ Technical conflict detected")
                     print(f"  Diagnosis: {fc['diagnosis']}")
 
         print("\n" + "=" * 60)
 
-    # private helpers
+    # ── Private helpers ──────────────────────────────────────────────────────
+
     def _diagnose_failure(self, match: EvidenceMatch) -> str:
+        if match.technical_conflict:
+            return (
+                f"Technical term conflict detected (score={match.similarity_score}). "
+                "Claim and evidence use different terms from the same technical group "
+                "(e.g. PUT vs PATCH). Semantically similar but factually incorrect."
+            )
         score = match.similarity_score
         if score >= 0.60:
             return (
@@ -604,9 +740,10 @@ class FaithfulnessEvaluator:
                 "best_match_in_context": f"Evidence exists (similarity={evidence_sim:.4f})",
                 "similarity_score": evidence_sim,
                 "threshold": self.similarity_threshold,
+                "technical_conflict": False,
                 "diagnosis": (
                     f"FALSE INSUFFICIENT_CONTEXT: Model refused to answer despite evidence "
-                    f"in context (similarity={evidence_sim:.4f} >= threshold={self.similarity_threshold}). "
+                    f"in context (similarity={evidence_sim:.4f} >= threshold={INSUFFICIENT_VALIDATION_THRESHOLD}). "
                     f"Model over-triggered escape hatch or failed to read context correctly."
                 ),
             }],
@@ -614,6 +751,7 @@ class FaithfulnessEvaluator:
             embedding_model=self.embedding_model,
             evaluator_version=self.VERSION,
             timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            evaluation_path="false_insufficient_context",
         )
 
     def _build_insufficient_result(
@@ -624,13 +762,14 @@ class FaithfulnessEvaluator:
             answer=answer, context_preview=context[:200],
             total_claims=0, claims=[], evidence_matches=[],
             supported_count=0, unsupported_count=0, skipped_count=0,
-            faithfulness_score=1.0,        
+            faithfulness_score=1.0,
             is_insufficient_context_response=True,
             has_failure=False, failure_cases=[],
             similarity_threshold=self.similarity_threshold,
             embedding_model=self.embedding_model,
             evaluator_version=self.VERSION,
             timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            evaluation_path="insufficient_context",
         )
 
     def _build_empty_result(
@@ -650,65 +789,91 @@ class FaithfulnessEvaluator:
                 "best_match_in_context": "",
                 "similarity_score": 0.0,
                 "threshold": self.similarity_threshold,
+                "technical_conflict": False,
                 "diagnosis": "Model returned an empty or unparseable answer.",
             }],
             similarity_threshold=self.similarity_threshold,
             embedding_model=self.embedding_model,
             evaluator_version=self.VERSION,
             timestamp_utc=datetime.now(timezone.utc).isoformat(),
+            evaluation_path="empty_answer",
         )
 
 
-# smoke test
+# ---------------------------------------------------------------------------
+# Smoke test
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
     import sys
     logging.basicConfig(level=logging.INFO, format="%(levelname)s — %(message)s")
 
     print("=" * 60)
-    print("FaithfulnessEvaluator — Smoke Test")
-    print(f"Embedding: {EMBEDDING_MODEL} via Ollama")
+    print(f"FaithfulnessEvaluator — Smoke Test (v{FaithfulnessEvaluator.VERSION})")
+    print(f"Embedding : {EMBEDDING_MODEL} via Ollama")
+    print(f"Threshold : {DEFAULT_SIMILARITY_THRESHOLD}")
     print("=" * 60)
 
-    evaluator = FaithfulnessEvaluator(similarity_threshold=0.75)
+    evaluator = FaithfulnessEvaluator()
 
     print("\n[1] Health check...")
     if not evaluator.health_check():
-        print("\n Ollama atau nomic-embed-text tidak siap.")
-        print("   Pastikan Ollama berjalan  : ollama serve")
-        print("   Pastikan model tersedia   : ollama list")
+        print("\n  Ollama atau nomic-embed-text tidak siap.")
+        print("  Pastikan Ollama berjalan : ollama serve")
+        print("  Pastikan model tersedia  : ollama list")
         sys.exit(1)
+    print("  Siap.\n")
 
-    print(" Siap.\n")
-
-    test_case = {
+    base_case = {
         "id": "smoke_001",
         "context": (
             "FastAPI generates a schema with all your API using the OpenAPI standard. "
-            "This schema definition includes your API paths, the possible parameters they take."
+            "This schema definition includes your API paths, the possible parameters they take. "
+            "To update a resource, you should use the PATCH method, not PUT."
         ),
         "question": "What does the OpenAPI schema generated by FastAPI include?",
+        "ground_truth": "API paths and the possible parameters",
     }
 
-    print("[2] Faithful answer...")
+    print("[2] Normal answer (faithful)...")
     r1 = evaluator.evaluate(
-        test_case,
+        base_case,
         "The OpenAPI schema includes your API paths and the possible parameters they take.",
         model_name="smoke_test",
     )
-    print(f"   Score: {r1.faithfulness_score} | Failure: {r1.has_failure}")
+    print(f"   Score: {r1.faithfulness_score} | Path: {r1.evaluation_path} | Failure: {r1.has_failure}")
 
-    print("\n[3] Hallucinated answer...")
-    r2 = evaluator.evaluate(
-        test_case,
+    print("\n[3] Short answer — exact match ('PUT')...")
+    short_case = {**base_case, "id": "smoke_002", "ground_truth": "PATCH"}
+    r2 = evaluator.evaluate(short_case, "PUT", model_name="smoke_test")
+    print(f"   Score: {r2.faithfulness_score} | Path: {r2.evaluation_path}")
+    print(f"   Expected: low score (wrong HTTP method). Got: {r2.faithfulness_score}")
+
+    print("\n[4] Short answer — correct match...")
+    r3 = evaluator.evaluate(short_case, "PATCH", model_name="smoke_test")
+    print(f"   Score: {r3.faithfulness_score} | Path: {r3.evaluation_path}")
+    print(f"   Expected: 1.0. Got: {r3.faithfulness_score}")
+
+    print("\n[5] Technical conflict — PUT vs PATCH in long answer...")
+    r4 = evaluator.evaluate(
+        base_case,
+        "To update a resource, you should use the PUT method.",
+        model_name="smoke_test",
+    )
+    print(f"   Score: {r4.faithfulness_score} | Path: {r4.evaluation_path}")
+    print(f"   Expected: 0.0 (PUT vs PATCH conflict). Got: {r4.faithfulness_score}")
+    if r4.failure_cases:
+        print(f"   Diagnosis: {r4.failure_cases[0]['diagnosis']}")
+
+    print("\n[6] Hallucinated answer...")
+    r5 = evaluator.evaluate(
+        base_case,
         (
             "The OpenAPI schema includes your API paths, parameters, "
             "authentication methods, response schemas, and rate limiting configuration."
         ),
         model_name="smoke_test",
     )
-    print(f"   Score: {r2.faithfulness_score} | Failure: {r2.has_failure}")
-    for fc in r2.failure_cases:
-        print(f"   {fc['unsupported_claim'][:80]}")
-        print(f"      → {fc['diagnosis']}")
+    print(f"   Score: {r5.faithfulness_score} | Failure: {r5.has_failure}")
 
-    evaluator.print_summary([r1, r2])
+    evaluator.print_summary([r1, r2, r3, r4, r5])
