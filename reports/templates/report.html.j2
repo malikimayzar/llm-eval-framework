@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }}</title>
+<style>
+  :root {
+    --bg:        #0d0f1a;
+    --bg2:       #141627;
+    --bg3:       #1c1f35;
+    --border:    #252842;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --accent:    #3b82f6;
+    --green:     #22c55e;
+    --orange:    #f97316;
+    --red:       #ef4444;
+    --yellow:    #eab308;
+    --mistral:   #3b82f6;
+    --phi3:      #f97316;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── Layout ── */
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+
+  /* ── Header ── */
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 3rem 0 2rem;
+    margin-bottom: 3rem;
+  }
+  .header-inner { display: flex; justify-content: space-between; align-items: flex-end; }
+  .header-left .badge {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+  }
+  header h1 {
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    font-weight: 800;
+    line-height: 1.1;
+    color: #f8fafc;
+  }
+  header h1 span { color: var(--accent); }
+  .header-right {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: right;
+    line-height: 2;
+  }
+
+  /* ── Section titles ── */
+  .section { margin-bottom: 3rem; }
+  .section-title {
+    font-size: 11px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  /* ── Stat cards ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem 1.4rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+  .stat-card.green::before  { background: var(--green); }
+  .stat-card.orange::before { background: var(--orange); }
+  .stat-card.red::before    { background: var(--red); }
+  .stat-card.blue::before   { background: var(--accent); }
+  .stat-card.yellow::before { background: var(--yellow); }
+
+  .stat-value {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 0.4rem;
+  }
+  .stat-card.green  .stat-value { color: var(--green); }
+  .stat-card.orange .stat-value { color: var(--orange); }
+  .stat-card.red    .stat-value { color: var(--red); }
+  .stat-card.blue   .stat-value { color: var(--accent); }
+  .stat-card.yellow .stat-value { color: var(--yellow); }
+  .stat-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Model comparison table ── */
+  .compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 13px;
+  }
+  .compare-table th {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .compare-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+  .compare-table tr:last-child td { border-bottom: none; }
+  .compare-table tr:hover td { background: var(--bg3); }
+  .model-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+  .model-tag.mistral { background: rgba(59,130,246,0.15); color: var(--mistral); }
+  .model-tag.phi3    { background: rgba(249,115,22,0.15);  color: var(--phi3); }
+  .winner { color: var(--green); }
+  .loser  { color: var(--muted); }
+
+  /* ── Per-case results table ── */
+  .results-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 1rem;
+  }
+  .results-table th {
+    padding: 0.6rem 0.8rem;
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    font-family: 'Consolas', 'Courier New', monospace;
+  }
+  .results-table td {
+    padding: 0.65rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .results-table tr:last-child td { border-bottom: none; }
+  .results-table tr:hover td { background: var(--bg3); }
+
+  .score-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 100px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .score-pill.perfect { background: rgba(34,197,94,0.15);  color: var(--green); }
+  .score-pill.partial { background: rgba(234,179,8,0.15);  color: var(--yellow); }
+  .score-pill.failed  { background: rgba(239,68,68,0.15);  color: var(--red); }
+
+  .case-id {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    color: var(--accent);
+  }
+  .case-question {
+    color: var(--text);
+    max-width: 320px;
+  }
+  .case-note {
+    font-size: 12px;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* ── Score bar ── */
+  .score-bar-wrap {
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .score-bar {
+    flex: 1; height: 6px;
+    background: var(--bg3);
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 60px;
+  }
+  .score-bar-fill {
+    height: 100%; border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+  .score-bar-fill.perfect { background: var(--green); }
+  .score-bar-fill.partial { background: var(--yellow); }
+  .score-bar-fill.failed  { background: var(--red); }
+
+  /* ── Findings ── */
+  .finding {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .finding.warning { border-left-color: var(--orange); }
+  .finding.success { border-left-color: var(--green); }
+  .finding.danger  { border-left-color: var(--red); }
+  .finding-title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 0.4rem;
+    color: #f8fafc;
+  }
+  .finding-body {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+  .finding-body code {
+    font-family: 'Consolas', 'Courier New', monospace;
+    background: var(--bg3);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  /* ── Threshold table ── */
+  .threshold-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0.75rem;
+  }
+  .threshold-item {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem 1.1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .threshold-name { font-size: 13px; color: var(--text); }
+  .threshold-val {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  /* ── Charts section ── */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .chart-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .chart-card.full { grid-column: 1 / -1; }
+  .chart-card img { width: 100%; display: block; }
+  .chart-caption {
+    padding: 0.6rem 1rem;
+    font-size: 11px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    font-family: 'Consolas', 'Courier New', monospace;
+  }
+
+  /* ── Limitations ── */
+  .limitation-list { list-style: none; }
+  .limitation-list li {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--muted);
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+  }
+  .limitation-list li:last-child { border-bottom: none; }
+  .limitation-list li::before {
+    content: '⚠';
+    color: var(--yellow);
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .limitation-list strong { color: var(--text); }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 2rem 0;
+    margin-top: 3rem;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ── Tabs ── */
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.5rem;
+  }
+  .tab-btn {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.6rem 1.2rem;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    transition: all 0.15s;
+    margin-bottom: -1px;
+  }
+  .tab-btn:hover  { color: var(--text); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Dataset badge ── */
+  .dataset-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .dataset-badge.clean      { background: rgba(59,130,246,0.15); color: var(--accent); }
+  .dataset-badge.distractor { background: rgba(249,115,22,0.15);  color: var(--phi3); }
+  .dataset-badge.paraphrase { background: rgba(168,85,247,0.15);  color: #a855f7; }
+
+  /* ── Responsive ── */
+  @media (max-width: 700px) {
+    .charts-grid { grid-template-columns: 1fr; }
+    .header-inner { flex-direction: column; align-items: flex-start; gap: 1rem; }
+    .header-right { text-align: left; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="header-inner">
+      <div class="header-left">
+        <div class="badge">LLM Evaluation Framework · v{{ evaluator_version }}</div>
+        <h1>{{ title }}<br><span>Evaluation Report</span></h1>
+      </div>
+      <div class="header-right">
+        <div>Generated: {{ generated_at }}</div>
+        <div>Dataset: {{ dataset_domain }}</div>
+        <div>Infrastructure: {{ infrastructure }}</div>
+        <div>Run ID: {{ run_id }}</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Summary Stats ── -->
+  <div class="section">
+    <div class="section-title">Summary — Mistral, Clean Dataset</div>
+    <div class="stats-grid">
+      <div class="stat-card blue">
+        <div class="stat-value">{{ mistral_clean.avg_score }}</div>
+        <div class="stat-label">Avg Faithfulness</div>
+      </div>
+      <div class="stat-card green">
+        <div class="stat-value">{{ mistral_clean.perfect_count }}/{{ mistral_clean.total }}</div>
+        <div class="stat-label">Perfect Score</div>
+      </div>
+      <div class="stat-card red">
+        <div class="stat-value">{{ mistral_clean.failure_rate }}</div>
+        <div class="stat-label">Failure Rate</div>
+      </div>
+      <div class="stat-card orange">
+        <div class="stat-value">{{ mistral_clean.false_insuf }}</div>
+        <div class="stat-label">False INSUF_CTX</div>
+      </div>
+      <div class="stat-card yellow">
+        <div class="stat-value">{{ mistral_clean.avg_latency }}s</div>
+        <div class="stat-label">Avg Latency</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Model Comparison ── -->
+  <div class="section">
+    <div class="section-title">Model Comparison — Clean Dataset</div>
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th><span class="model-tag mistral">mistral</span></th>
+          <th><span class="model-tag phi3">phi3:mini</span></th>
+          <th>Winner</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in comparison_rows %}
+        <tr>
+          <td>{{ row.metric }}</td>
+          <td class="{{ 'winner' if row.mistral_wins else 'loser' }}">{{ row.mistral_val }}</td>
+          <td class="{{ 'winner' if not row.mistral_wins else 'loser' }}">{{ row.phi3_val }}</td>
+          <td>
+            {% if row.tie %}
+              <span style="color: var(--muted)">tie</span>
+            {% elif row.mistral_wins %}
+              <span class="model-tag mistral">mistral ★</span>
+            {% else %}
+              <span class="model-tag phi3">phi3:mini ★</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── Per-Case Results ── -->
+  <div class="section">
+    <div class="section-title">Per-Case Results</div>
+
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab(event, 'tab-mistral-clean')">mistral · clean</button>
+      <button class="tab-btn" onclick="switchTab(event, 'tab-mistral-distractor')">mistral · distractor</button>
+      <button class="tab-btn" onclick="switchTab(event, 'tab-phi3-clean')">phi3:mini · clean</button>
+    </div>
+
+    <!-- Mistral Clean -->
+    <div id="tab-mistral-clean" class="tab-panel active">
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th>Case ID</th>
+            <th>Question</th>
+            <th>Score</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for case in mistral_clean_cases %}
+          <tr>
+            <td><span class="case-id">{{ case.id }}</span></td>
+            <td><span class="case-question">{{ case.question }}</span></td>
+            <td>
+              <div class="score-bar-wrap">
+                {% set cls = 'perfect' if case.score == 1.0 else ('partial' if case.score > 0 else 'failed') %}
+                <div class="score-bar">
+                  <div class="score-bar-fill {{ cls }}" style="width: {{ (case.score * 100)|int }}%"></div>
+                </div>
+                <span class="score-pill {{ cls }}">{{ "%.2f"|format(case.score) }}</span>
+              </div>
+            </td>
+            <td><span class="case-note">{{ case.note }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Mistral Distractor -->
+    <div id="tab-mistral-distractor" class="tab-panel">
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th>Case ID</th>
+            <th>Question</th>
+            <th>Score</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for case in mistral_distractor_cases %}
+          <tr>
+            <td><span class="case-id">{{ case.id }}</span></td>
+            <td><span class="case-question">{{ case.question }}</span></td>
+            <td>
+              <div class="score-bar-wrap">
+                {% if case.score is none %}
+                  <span class="score-pill failed">N/A</span>
+                {% else %}
+                  {% set cls = 'perfect' if case.score == 1.0 else ('partial' if case.score > 0 else 'failed') %}
+                  <div class="score-bar">
+                    <div class="score-bar-fill {{ cls }}" style="width: {{ (case.score * 100)|int }}%"></div>
+                  </div>
+                  <span class="score-pill {{ cls }}">{{ "%.2f"|format(case.score) }}</span>
+                {% endif %}
+              </div>
+            </td>
+            <td><span class="case-note">{{ case.note }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- phi3 Clean -->
+    <div id="tab-phi3-clean" class="tab-panel">
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th>Case ID</th>
+            <th>Score</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for case in phi3_clean_cases %}
+          <tr>
+            <td><span class="case-id">{{ case.id }}</span></td>
+            <td>
+              <div class="score-bar-wrap">
+                {% set cls = 'perfect' if case.score == 1.0 else ('partial' if case.score > 0 else 'failed') %}
+                <div class="score-bar">
+                  <div class="score-bar-fill {{ cls }}" style="width: {{ (case.score * 100)|int }}%"></div>
+                </div>
+                <span class="score-pill {{ cls }}">{{ "%.2f"|format(case.score) }}</span>
+              </div>
+            </td>
+            <td><span class="case-note">{{ case.note }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Charts ── -->
+  <div class="section">
+    <div class="section-title">Visualizations</div>
+    <div class="charts-grid">
+      {% for chart in charts %}
+      <div class="chart-card {{ 'full' if chart.full else '' }}">
+        <img src="{{ chart.path }}" alt="{{ chart.caption }}" loading="lazy">
+        <div class="chart-caption">{{ chart.caption }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Key Findings ── -->
+  <div class="section">
+    <div class="section-title">Key Findings</div>
+    {% for f in findings %}
+    <div class="finding {{ f.type }}">
+      <div class="finding-title">{{ loop.index }}. {{ f.title }}</div>
+      <div class="finding-body">{{ f.body }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- ── Thresholds ── -->
+  <div class="section">
+    <div class="section-title">Calibrated Thresholds</div>
+    <div class="threshold-grid">
+      {% for t in thresholds %}
+      <div class="threshold-item">
+        <span class="threshold-name">{{ t.name }}</span>
+        <span class="threshold-val">{{ t.value }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Limitations ── -->
+  <div class="section">
+    <div class="section-title">Acknowledged Limitations</div>
+    <ul class="limitation-list">
+      {% for lim in limitations %}
+      <li><span><strong>{{ lim.title }}.</strong> {{ lim.body }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <!-- ── Footer ── -->
+  <footer>
+    <div>LLM Evaluation Framework · v{{ evaluator_version }} · MIT License</div>
+    <div>{{ generated_at }}</div>
+  </footer>
+
+</div>
+
+<script>
+  function switchTab(e, tabId) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    e.target.classList.add('active');
+    document.getElementById(tabId).classList.add('active');
+  }
+</script>
+</body>
+</html>

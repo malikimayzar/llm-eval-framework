@@ -26,10 +26,18 @@ Thumbs.db
 
 # Logs
 *.log
+logs/
 
 # Environment variables
 .env
 
-# Reports results — generated files, tidak di-commit
-reports/results/*.json
-reports/results/*.txt
+# Reports — generated files, tidak di-commit
+reports/results/
+reports/charts/
+reports/report.html
+
+# Checkpoints — resume state, tidak di-commit
+logs/checkpoints/
+
+# NLTK data
+nltk_data/

@@ -584,7 +584,6 @@ Examples:
         help="Validasi dataset dan config tanpa inference")
     return parser.parse_args()
 
-
 if __name__ == "__main__":
     args = parse_args()
 
@@ -596,10 +595,10 @@ if __name__ == "__main__":
     print(f"Limit     : {args.limit or 'all cases'}")
     threshold_display = args.threshold or config["thresholds"]["faithfulness_evidence"]
     print(f"Threshold : {threshold_display}")
-    print(f"Resume    : {not args.no_resume}")
+    print(f"Resume : {not args.no_resume}")
     print(f"Dry run   : {args.dry_run}")
     print("=" * 60 + "\n")
-
+    
     run_evaluation(
         model_name=args.model,
         dataset_name=args.dataset,
@@ -608,3 +607,4 @@ if __name__ == "__main__":
         resume=not args.no_resume,
         dry_run=args.dry_run,
     )
+    
