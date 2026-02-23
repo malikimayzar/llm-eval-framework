@@ -599,7 +599,6 @@ class FaithfulnessEvaluator:
         print("\n" + "=" * 60)
 
     # Private helpers
-
     def _diagnose_failure(self, match: EvidenceMatch) -> str:
         if match.technical_conflict:
             return (

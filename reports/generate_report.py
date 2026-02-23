@@ -1,14 +1,3 @@
-"""
-reports/generate_report.py
-──────────────────────────
-Generate HTML evaluation report dari hasil eval yang sudah ada.
-
-Usage:
-    python reports/generate_report.py
-    python reports/generate_report.py --output reports/report.html
-    python reports/generate_report.py --embed-charts   # chart jadi base64 inline
-"""
-
 import json
 import base64
 import argparse
@@ -17,16 +6,14 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-# ── Paths ────────────────────────────────────────────────────────────────────
-
+# Paths
 REPORTS_DIR   = Path(__file__).parent
 RESULTS_DIR   = REPORTS_DIR / "results"
 CHARTS_DIR    = REPORTS_DIR / "charts"
 TEMPLATES_DIR = REPORTS_DIR / "templates"
 
 
-# ── Data loaders ──────────────────────────────────────────────────────────────
-
+# Data loaders
 def load_latest_faithfulness(model: str, dataset: str) -> list:
     safe = model.replace(":", "-")
     files = sorted(RESULTS_DIR.glob(f"{safe}_{dataset}_*_faithfulness.json"))
@@ -41,9 +28,6 @@ def load_latest_summary(model: str, dataset: str) -> dict:
     if not files:
         return {}
     return json.loads(files[-1].read_text())
-
-
-# ── Fallback data (dari analysis.md) — dipakai jika hasil JSON belum ada ─────
 
 MISTRAL_CLEAN_DATA = [
     {"id": "clean_001", "score": 0.0,   "question": "What are the default values of skip and limit?",              "note": "FALSE INSUFFICIENT_CONTEXT (sim=0.7249)"},
@@ -80,10 +64,8 @@ PHI3_CLEAN_DATA = [
 ]
 
 
-# ── Template data builders ────────────────────────────────────────────────────
-
+# Template data builders
 def build_comparison_rows() -> list:
-    """Build rows untuk model comparison table."""
     rows = [
         {
             "metric": "Avg Faithfulness",
@@ -103,7 +85,7 @@ def build_comparison_rows() -> list:
             "metric": "Failure Rate",
             "mistral_val": "50%",
             "phi3_val": "60%",
-            "mistral_wins": True,   # lower is better
+            "mistral_wins": True,   
             "tie": False,
         },
         {
@@ -117,7 +99,7 @@ def build_comparison_rows() -> list:
             "metric": "Avg Latency / case",
             "mistral_val": "463.7s (7.7 min)",
             "phi3_val": "222.9s (3.7 min)",
-            "mistral_wins": False,  # phi3 faster
+            "mistral_wins": False, 
             "tie": False,
         },
         {
@@ -232,11 +214,6 @@ def build_limitations() -> list:
 
 
 def build_charts(embed: bool = False) -> list:
-    """
-    Build chart list untuk template.
-    embed=True: chart di-encode jadi base64 (self-contained HTML)
-    embed=False: chart pakai relative path (lebih kecil, butuh file PNG)
-    """
     chart_defs = [
         {"file": "model_comparison.png",         "caption": "fig 1 — model comparison: 4 metrics side by side", "full": True},
         {"file": "per_case_comparison.png",       "caption": "fig 2 — per-case faithfulness: mistral vs phi3:mini", "full": True},
@@ -256,7 +233,6 @@ def build_charts(embed: bool = False) -> list:
             data = base64.b64encode(path.read_bytes()).decode()
             src = f"data:image/png;base64,{data}"
         else:
-            # Path relatif dari lokasi output HTML
             src = f"charts/{c['file']}"
 
         charts.append({"path": src, "caption": c["caption"], "full": c["full"]})
@@ -265,11 +241,7 @@ def build_charts(embed: bool = False) -> list:
 
 
 # ── Main render function ──────────────────────────────────────────────────────
-
 def generate_report(output_path: str, embed_charts: bool = False) -> str:
-    """Render HTML report dan simpan ke output_path. Return path yang disimpan."""
-
-    # Load data dari JSON jika ada, fallback ke hardcoded
     mistral_clean_raw      = load_latest_faithfulness("mistral", "clean")
     mistral_distractor_raw = load_latest_faithfulness("mistral", "distractor")
     phi3_clean_raw         = load_latest_faithfulness("phi3:mini", "clean")
@@ -339,7 +311,6 @@ def generate_report(output_path: str, embed_charts: bool = False) -> str:
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
-
 def parse_args():
     parser = argparse.ArgumentParser(description="LLM Eval — HTML Report Generator")
     parser.add_argument("--output", default="reports/report.html",
