@@ -94,17 +94,17 @@ class OllamaEmbedder:
     ):
         self.model = model
         self.base_url = base_url.rstrip("/")
-        self._endpoint = f"{self.base_url}/api/embeddings"
+        self._endpoint = f"{self.base_url}/api/embed"
         logger.info(f"OllamaEmbedder initialized | model={self.model}")
 
     def embed(self, text: str) -> np.ndarray:
         response = requests.post(
             self._endpoint,
-            json={"model": self.model, "prompt": text},
+            json={"model": self.model, "input": text},
             timeout=30,
         )
         response.raise_for_status()
-        return np.array(response.json()["embedding"], dtype=np.float32)
+        return np.array(response.json()["embeddings"][0], dtype=np.float32)
 
     def embed_batch(self, texts: list) -> np.ndarray:
         embeddings = []

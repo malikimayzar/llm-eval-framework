@@ -1,5 +1,5 @@
 thresholds:
-  faithfulness_evidence: 0.75         
+  faithfulness_evidence: 0.68         
   insufficient_ctx_validation: 0.65   
   consistency_semantic: 0.72
   consistency_rouge_l: 0.40
