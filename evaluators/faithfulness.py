@@ -33,7 +33,8 @@ MIN_CLAIM_LENGTH_WORDS          = 2
 SHORT_ANSWER_WORD_THRESHOLD     = config["thresholds"]["short_answer_max_words"]
 SHORT_ANSWER_CHAR_SIM_THRESHOLD = config["thresholds"]["short_answer_char_sim"]
 INSUFFICIENT_CONTEXT_SIGNAL     = "INSUFFICIENT_CONTEXT"
-OLLAMA_BASE_URL                 = "http://localhost:11434"
+import os as _os
+OLLAMA_BASE_URL = _os.getenv("OLLAMA_HOST", "http://localhost:11434")
 EMBEDDING_MODEL                 = config["models"]["embedding"]
 
 _TECHNICAL_TERM_GROUPS = [

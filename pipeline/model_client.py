@@ -64,7 +64,7 @@ class OllamaClient:
     def __init__(
         self,
         model: str = "mistral",
-        base_url: str = "http://localhost:11434",
+        base_url: str = __import__("os").getenv("OLLAMA_HOST", "http://localhost:11434"),
         temperature: float = 0.0,
         max_tokens: int = 512,
         timeout_seconds: int = 900,
