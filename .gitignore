@@ -40,4 +40,4 @@ reports/report.html
 logs/checkpoints/
 
 # NLTK data
-nltk_data/
+nltk_data/nohup.out
